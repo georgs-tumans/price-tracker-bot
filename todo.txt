@@ -5,7 +5,7 @@
 - pamēģināt entities messagiem
 
 Rindas kārtība:
-- komanda, kas parāda visas pieejamās komandas (help)
+- ierobežojums uz trackinga regularitāti
 - readme
 
 

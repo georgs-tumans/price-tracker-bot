@@ -14,10 +14,23 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+const (
+	generalType = "general"
+	trackerType = "tracker"
+	bothType    = "both"
+)
+
+type Command struct {
+	Type               string
+	DescriptionGeneral string
+	DescriptionTracker string
+	Handler            CommandFunc
+}
+
 type CommandHandler struct {
 	config          *config.Configuration
 	runningTrackers []*Tracker
-	commandMap      map[string]CommandFunc
+	commandMap      map[string]*Command
 	bot             *tgbotapi.BotAPI
 	mu              sync.Mutex
 }
@@ -30,12 +43,12 @@ func NewCommandHandler(bot *tgbotapi.BotAPI) *CommandHandler {
 		bot:    bot,
 	}
 
-	// TODO: add status command
-	ch.commandMap = map[string]CommandFunc{
-		"start":    ch.handleStart,
-		"stop":     ch.handleStop,
-		"interval": ch.handleSetInterval,
-		"status":   ch.handleStatus,
+	ch.commandMap = map[string]*Command{
+		"start":    {Type: trackerType, DescriptionTracker: "Run a tracker", Handler: ch.handleStart},
+		"stop":     {Type: trackerType, DescriptionTracker: "Stop a tracker", Handler: ch.handleStop},
+		"interval": {Type: trackerType, DescriptionTracker: "Change the tracker run interval", Handler: ch.handleSetInterval},
+		"status":   {Type: bothType, DescriptionTracker: "View a particular tracker status", DescriptionGeneral: "View status of all available trackers", Handler: ch.handleStatus},
+		"help":     {Type: generalType, DescriptionGeneral: "View all available commands", Handler: ch.handleHelp},
 	}
 
 	return ch
@@ -51,7 +64,7 @@ func (ch *CommandHandler) HandleCommand(chatId int64, commandString string) erro
 		commandParam = &commandParts[1]
 	}
 
-	/*Commands must always consist of two words separated by an underscore;
+	/*Commands mostly consist of two words separated by an underscore;
 	  the first word is the command code, the second word is the actual command.
 	  There can be exceptions for commands that target all of the bot functionality instead of specific parts/clients.
 	*/
@@ -65,8 +78,8 @@ func (ch *CommandHandler) HandleCommand(chatId int64, commandString string) erro
 
 	log.Printf("[CommandHandler] Handling command: %s", commandString)
 
-	if handler, exists := ch.commandMap[commandFunction]; exists {
-		if err := handler(commandCode, chatId, commandParam); err != nil {
+	if command, exists := ch.commandMap[commandFunction]; exists {
+		if err := command.Handler(commandCode, chatId, commandParam); err != nil {
 			return err
 		}
 	} else {
@@ -225,6 +238,36 @@ func (ch *CommandHandler) handleStatus(code string, chatId int64, commandParam *
 	builder.WriteString(helpers.FormatNotificationCriteriaString(tracker.trackerData.NotifyCriteria) + "\n")
 	builder.WriteString("Current run interval: " + utilities.DurationToString(tracker.Status.CurrentInterval) + "\n")
 	builder.WriteString("Execution errors count: " + strconv.Itoa(len(tracker.Status.ExecutionErrors)) + "\n")
+
+	helpers.SendMessageHTML(ch.bot, chatId, builder.String(), nil)
+
+	return nil
+}
+
+func (ch *CommandHandler) handleHelp(code string, chatId int64, commandParam *string) error {
+	// Command only available generally for all trackers
+	if code != "" {
+		log.Printf("[CommandHandler] code passed to the general-only /help command")
+		helpers.SendMessageHTML(ch.bot, chatId, "/help is a general command not specific to any trackers", nil)
+
+		return nil
+	}
+
+	var builder strings.Builder
+	builder.WriteString("<b>Available general commands</b>\n\n")
+
+	for command, cmd := range ch.commandMap {
+		if cmd.Type == generalType || cmd.Type == bothType {
+			builder.WriteString(fmt.Sprintf(" - /%s - %s\n", command, cmd.DescriptionGeneral))
+		}
+	}
+
+	builder.WriteString("\n<b>Available tracker specific commands</b>\n\n")
+	for command, cmd := range ch.commandMap {
+		if cmd.Type == trackerType || cmd.Type == bothType {
+			builder.WriteString(fmt.Sprintf(" - /%s - %s\n", command, cmd.DescriptionTracker))
+		}
+	}
 
 	helpers.SendMessageHTML(ch.bot, chatId, builder.String(), nil)
 
