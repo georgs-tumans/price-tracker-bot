@@ -6,16 +6,22 @@ A Telegram bot with a set of tools originally intended for acquiring whatever da
 
 ## Available tools/functionality
 
-### Savings bonds data
+### Public API data tracker
 
-Fetches data about the current interest rates of the government issued savings bonds of the Republic of Latvia notifying the user in case the 12 months bonds interest rate is equal or higher than the desired configured value.
+Can track data from freely available public API's and notify user when certain value criteria is reached.
 
- Available commands:
 
- - `/bonds_start` - starts up the bonds client
- - `/bonds_stop` - stops the bonds client
- - `/bonds_status` - gives the bonds client status
- - `/bonds_set_interval <number><interval type>` - sets the interval at which bonds data will be fetched. Example command: `/bonds_set_interval 1h`. Available interval types: 'm'(minute), 'h'(hour), 'd'(day)
+### Available bot commands:
+
+General commands:
+ - `/status` - prints status of the configured trackers
+ - `/help` - prints all available commands
+
+ Tracker specific commands:
+ - `/<tracker_code>_start` - starts a tracker
+ - `/<tracker_code>_stop` - stops a tracker
+ - `/<tracker_code>_status` - prints tracker status
+ - `/<tracker_code>_interval <number><interval type>` - sets tracker run interval. Example command: `/bonds_interval 1h`. Available interval types: 'm'(minute), 'h'(hour), 'd'(day)
 
 ## Preconditions
 
@@ -37,7 +43,7 @@ Fetches data about the current interest rates of the government issued savings b
 
 The default approach is when the bot determines whether to initialize with webhooks or long polling based on the value of the `ENVIROMENT` environment variable (see the Development section) upon starting.
 
-If case of local development follow these steps:
+In case of local development follow these steps:
 
 1. Create an `.env` file; use this [example](/.env.example) to fill out the values.
 
@@ -80,4 +86,4 @@ You cannot run the bot in the long polling mode while there are actively registe
 
 ## Deployment
 
-The bot is currently hosted on Google Apps; pushing to `master` triggers a build.
+~~The bot is currently hosted on Google Apps; pushing to `master` triggers a build.~~

@@ -6,7 +6,7 @@
 
 Rindas kārtība:
 - ierobežojums uz trackinga regularitāti
-- readme
+- readme - par konfigurāciju
 
 
 API request handler:
