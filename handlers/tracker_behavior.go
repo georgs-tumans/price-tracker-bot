@@ -47,7 +47,8 @@ func (tb *APITrackerBehavior) Execute(trackerData *config.Tracker, chatID int64)
 }
 
 type ScraperTrackerBehavior struct {
-	bot *tgbotapi.BotAPI
+	bot    *tgbotapi.BotAPI
+	client *clients.ScraperClient
 }
 
 func NewScraperTrackerBehavior(bot *tgbotapi.BotAPI) *ScraperTrackerBehavior {
@@ -56,14 +57,17 @@ func NewScraperTrackerBehavior(bot *tgbotapi.BotAPI) *ScraperTrackerBehavior {
 	}
 }
 
-func (s *ScraperTrackerBehavior) Execute(trackerData *config.Tracker, chatID int64) (string, error) {
-	// Call the client for fetching website data and process the result
+func (tb *ScraperTrackerBehavior) Execute(trackerData *config.Tracker, chatID int64) (string, error) {
+	result, err := tb.client.FetchAndExtractData(trackerData)
+	if err != nil {
+		// Notify the user? Add to some failure statistics?
+		return "", err
+	}
 
-	// data, err := s.Client.FetchData(s.URL)
-	// if err != nil {
-	//     return err
-	// }
+	if result.NotificationMessage != "" {
+		helpers.SendMessageHTML(tb.bot, chatID, result.NotificationMessage, nil)
+	}
 
-	// log.Printf("[ScraperTracker] Data scraped from website: %v", data)
-	return "", nil
+	return fmt.Sprintf("%.2f", result.CurrentValue), nil
+	// return "", nil
 }
