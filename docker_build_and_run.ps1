@@ -1,4 +1,4 @@
-$containerName = "web_scraper_bot"
+$containerName = "price_tracker_bot"
 
 $runningContainer = docker ps -q -f "name=$containerName"
 
@@ -16,8 +16,8 @@ if ($existingContainer) {
 }
 
 Write-Host "Building the Docker image..."
-docker build -t web_scraper_bot .
+docker build -t $containerName .
 
 # Run the container
 Write-Host "Starting a new container: $containerName"
-docker run --name $containerName --env-file .env -p 8080:8080 $containerName 
+docker run --name $containerName --env-file .env -p 7080:8080 $containerName 
