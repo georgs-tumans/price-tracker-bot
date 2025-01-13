@@ -15,7 +15,7 @@ type NotifyCriteria struct {
 }
 
 type Tracker struct {
-	Code           string           `json:"code" validate:"required"`
+	Code           string           `json:"code" validate:"required,excludesall=_/ "`
 	APIURL         string           `json:"apiUrl" validate:"required,url"`
 	ViewURL        string           `json:"viewUrl" validate:"omitempty,url"`
 	Interval       string           `json:"interval" validate:"required"`
