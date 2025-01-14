@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"os"
 
@@ -49,26 +50,14 @@ func GetConfig() *Configuration {
 			Environment: os.Getenv("ENVIRONMENT"),
 		}
 
-		apiTrackersString := os.Getenv("API_TRACKERS")
-		if apiTrackersString != "" {
-			var apiTrackers []*Tracker
-
-			if err := json.Unmarshal([]byte(apiTrackersString), &apiTrackers); err != nil {
-				log.Fatalf("[GetConfig] Error reading and processing environmental variable 'API_TRACKERS': %v", err)
-			}
-
-			config.APITrackers = apiTrackers
+		config.APITrackers, err = loadTrackers("API_TRACKERS_FILE")
+		if err != nil {
+			log.Fatalf("[GetConfig] Error loading API trackers: %v", err)
 		}
 
-		scraperTrackersString := os.Getenv("SCRAPER_TRACKERS")
-		if scraperTrackersString != "" {
-			var scraperTrackers []*Tracker
-
-			if err := json.Unmarshal([]byte(scraperTrackersString), &scraperTrackers); err != nil {
-				log.Fatalf("[GetConfig] Error reading and processing environmental variable 'SCRAPER_TRACKERS': %v", err)
-			}
-
-			config.ScraperTrackers = scraperTrackers
+		config.ScraperTrackers, err = loadTrackers("SCRAPER_TRACKERS_FILE")
+		if err != nil {
+			log.Fatalf("[GetConfig] Error loading scraper trackers: %v", err)
 		}
 
 		if len(config.APITrackers) == 0 && len(config.ScraperTrackers) == 0 {
@@ -86,6 +75,25 @@ func GetConfig() *Configuration {
 	}
 
 	return config
+}
+
+func loadTrackers(fileVar string) ([]*Tracker, error) {
+	// Check if a file path is provided
+	filePath := os.Getenv(fileVar)
+	if filePath != "" {
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return nil, errors.New("failed to read tracker file")
+		}
+
+		var trackers []*Tracker
+		if err := json.Unmarshal(data, &trackers); err != nil {
+			return nil, errors.New("failed to parse JSON from file")
+		}
+		return trackers, nil
+	}
+
+	return nil, nil
 }
 
 func (c *Configuration) ValidateConfig() {

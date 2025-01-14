@@ -26,3 +26,5 @@ go.work.sum
 golang_web_scraper.log
 golang_web_scraper_bot.log
 ngrok.yml
+tracker_configs/scraper_trackers.json
+tracker_configs/api_trackers.json

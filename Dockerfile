@@ -22,6 +22,7 @@ WORKDIR /root/
 
 # Step 7: Copy the built Go binary from the build stage
 COPY --from=build /app/price_tracker_bot .
+COPY ./tracker_configs tracker_configs
 
 # Step 8: Set timezone from environment variable (default to UTC if not provided)
 ENV TZ=${TZ:-UTC}

@@ -21,3 +21,6 @@ docker build -t $containerName .
 # Run the container
 Write-Host "Starting a new container: $containerName"
 docker run --name $containerName --env-file .env -p 7080:8080 $containerName 
+
+Read-Host -Prompt "Press Enter to exit"
+
