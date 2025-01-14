@@ -102,7 +102,24 @@ func CreateTracker(bot *tgbotapi.BotAPI, code string, runInterval time.Duration,
 	}, nil
 }
 
-// TODO: Tracker logic should be executed immediately after creation, now it wait for the first Tick
+func (t *Tracker) executeTrackerLogic() {
+	t.Status.LastRunTimestamp = time.Now()
+	t.Status.TotalRuns++
+
+	if value, err := t.Behavior.Execute(t.trackerData, t.chatID); err != nil {
+		log.Printf("[Tracker] Error executing tracker '%s': %s", t.Code, err)
+		t.Status.ExecutionErrors = append(t.Status.ExecutionErrors, &TrackerExecutionError{Error: err, Timestamp: time.Now()})
+
+		// Notify the user about error accumulation
+		if len(t.Status.ExecutionErrors) >= t.errorLimit {
+			notificationMessage := fmt.Sprintf("More than %d execution errors registered for tracker <b>%s</b>, you should probably take a look at the logs :(", t.errorLimit, t.Code)
+			helpers.SendMessageHTML(t.bot, t.chatID, notificationMessage, nil)
+		}
+	} else {
+		t.Status.LastRecordedValue = value
+	}
+}
+
 func (t *Tracker) Start() {
 	if t.running {
 		return
@@ -119,24 +136,14 @@ func (t *Tracker) Start() {
 
 	go func() {
 		defer func() { t.running = false }()
+
+		// Execute immediately on start
+		t.executeTrackerLogic()
+
 		for {
 			select {
 			case <-t.Ticker.C:
-				t.Status.LastRunTimestamp = time.Now()
-				t.Status.TotalRuns++
-
-				if value, err := t.Behavior.Execute(t.trackerData, t.chatID); err != nil {
-					log.Printf("[Tracker] Error executing tracker '%s': %s", t.Code, err)
-					t.Status.ExecutionErrors = append(t.Status.ExecutionErrors, &TrackerExecutionError{Error: err, Timestamp: time.Now()})
-
-					// Notify the user about error accumulation
-					if len(t.Status.ExecutionErrors) >= t.errorLimit {
-						notificationMessage := fmt.Sprintf("More than %d execution errors registered for tracker <b>%s</b>, you should probably take a look at the logs :(", t.errorLimit, t.Code)
-						helpers.SendMessageHTML(t.bot, t.chatID, notificationMessage, nil)
-					}
-				} else {
-					t.Status.LastRecordedValue = value
-				}
+				t.executeTrackerLogic()
 			case <-t.Context.Done():
 				log.Printf("[Tracker] Stopping tracker '%s'", t.Code)
 				return
