@@ -5,7 +5,7 @@
 - pamēģināt entities messagiem
 
 Rindas kārtība:
-- ieviest, ka trackeris pirmo reizi izpildās uzreiz pēc palaišanas
+- GUI - trackeru pārvaldīšana ar pogām
 - ierobežojums uz trackinga regularitāti (?)
 - readme - par konfigurāciju
 - derētu pie paziņojumā norādītās summas pielikt atbilstošu valūtas simbolu
