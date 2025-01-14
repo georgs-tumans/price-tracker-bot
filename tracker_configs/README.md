@@ -19,5 +19,5 @@ File structure for both of these configurations must be as follows:
 
  See the example files for quick configuration:
 
-  - [api_trackers](/api_trackers.json.example) 
-  - [scraper_trackers](/scraper_trackers.json.example) 
+  - [api_trackers](api_trackers.json.example) 
+  - [scraper_trackers](scraper_trackers.json.example) 
