@@ -13,6 +13,8 @@ Tracking can be done using publicly available API for Single Page Applications o
 General commands:
  - `/status` - prints status of the configured trackers
  - `/help` - prints all available commands
+ - `/start` - runs all available trackers
+ - `/stop` - stops all running trackers
 
  Tracker specific commands:
  - `/<tracker_code>_start` - starts a tracker
