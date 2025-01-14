@@ -53,7 +53,8 @@ type ScraperTrackerBehavior struct {
 
 func NewScraperTrackerBehavior(bot *tgbotapi.BotAPI) *ScraperTrackerBehavior {
 	return &ScraperTrackerBehavior{
-		bot: bot,
+		bot:    bot,
+		client: clients.NewScraperClient(),
 	}
 }
 

@@ -51,6 +51,8 @@ func ProcessNotificationCriteria(trackerData *config.Tracker, extractedValue flo
 			builder.WriteString(fmt.Sprintf(" - value: %.2f %s %s\n", extractedValue, operatorEscaped, criteria.Value))
 		}
 
+		builder.WriteString((fmt.Sprintf("\nMore details <a href=\"%s\">here</a>", trackerData.ViewURL)))
+
 		return builder.String(), nil
 	}
 

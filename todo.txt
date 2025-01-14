@@ -5,8 +5,10 @@
 - pamēģināt entities messagiem
 
 Rindas kārtība:
-- ierobežojums uz trackinga regularitāti
+- ierobežojums uz trackinga regularitāti (?)
 - readme - par konfigurāciju
+- derētu pie paziņojumā norādītās summas pielikt atbilstošu valūtas simbolu
+- Pieslēgt kādus linterus
 
 
 API request handler:
@@ -27,7 +29,6 @@ Realizācijas aspekti:
 - Laikam divi env variabļi: json saraksts ar linkiem, ko apstrādās no API un json saraksts ar linkiem, kas jāapstrādā scraperim
 - env. variabļa struktūra: "[{'code': 'bonds', 'url': 'https://www.krajobligacijas.lv/api/offers/today', 'interval': '1h', 'notifyValue': '3.5', 'responsePath': '#(period==12).interestRate'}]"
 - atbildes struktūras lasīšanai izmantosim gjson bibliotēku (https://github.com/tidwall/gjson), tātad env responsePath tas jāņem vērā un ja jāapstrādā json lists - jānorāda attiecīgi
-- Pieslēgt kādus linterus
 
 
 Vajadzīgās komandas:

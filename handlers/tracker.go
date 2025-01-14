@@ -60,7 +60,7 @@ func CreateTracker(bot *tgbotapi.BotAPI, code string, runInterval time.Duration,
 	if trackerData == nil {
 		log.Printf("[Tracker] Failed to create a new tracker: %s; no such tracker found in configuration", code)
 
-		return nil, errors.New("no such tracker found in configuration")
+		return nil, errors.New("uncregonzied tracker code")
 	}
 
 	switch trackerType {

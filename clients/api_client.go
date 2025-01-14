@@ -24,19 +24,19 @@ func (c *PublicAPIClient) FetchAndExtractData(trackerData *config.Tracker) (*Dat
 	c.trackerData = trackerData
 	dataJson, err := c.getDataFromPublicAPI()
 	if err != nil {
-		log.Println("[Public API CLient] Error getting data from public API for tracker: "+c.trackerData.Code, err.Error())
+		log.Println("[Public API Client] Error getting data from public API for tracker: "+c.trackerData.Code, err.Error())
 		return nil, err
 	}
 
 	extractedValue, err := c.extractDataFromPublicAPIResponse(dataJson)
 	if err != nil {
-		log.Println("[Public API CLient] Error extracting data from public API response for tracker: "+c.trackerData.Code, err.Error())
+		log.Println("[Public API Client] Error extracting data from public API response for tracker: "+c.trackerData.Code, err.Error())
 		return nil, err
 	}
 
 	extractedValueFloat, extractedErr := strconv.ParseFloat(extractedValue, 64)
 	if extractedErr != nil {
-		log.Println("[Public API CLient] Error converting values for tracker: "+c.trackerData.Code, extractedErr.Error())
+		log.Println("[Public API Client] Error converting values for tracker: "+c.trackerData.Code, extractedErr.Error())
 		return nil, extractedErr
 	}
 
@@ -58,7 +58,7 @@ func (c *PublicAPIClient) FetchAndExtractData(trackerData *config.Tracker) (*Dat
 func (c *PublicAPIClient) getDataFromPublicAPI() ([]byte, error) {
 	response, err := services.GetRequest(c.trackerData.APIURL)
 	if err != nil {
-		log.Println("[Public API CLient] Error getting data from public API for tracker: "+c.trackerData.Code, err.Error())
+		log.Println("[Public API Client] Error getting data from public API for tracker: "+c.trackerData.Code, err.Error())
 
 		return nil, err
 	}
@@ -73,7 +73,7 @@ func (c *PublicAPIClient) extractDataFromPublicAPIResponse(responseJson []byte) 
 
 	result := gjson.GetBytes(responseJson, c.trackerData.ResponsePath)
 	if !result.Exists() {
-		log.Println("[Public API CLient] Error extracting data from public API response via the provided JSON path for tracker: "+c.trackerData.Code, "JSON path not found")
+		log.Println("[Public API Client] Error extracting data from public API response via the provided JSON path for tracker: "+c.trackerData.Code, "JSON path not found")
 
 		return "", errors.New("json path not found")
 	}
@@ -84,7 +84,7 @@ func (c *PublicAPIClient) extractDataFromPublicAPIResponse(responseJson []byte) 
 	case float64:
 		return fmt.Sprintf("%f", result.Float()), nil
 	default:
-		log.Println("[Public API CLient] Unrecognized extracted response data type for tracker: "+c.trackerData.Code, "Unsupported data type")
+		log.Println("[Public API Client] Unrecognized extracted response data type for tracker: "+c.trackerData.Code, "Unsupported data type")
 		return "", errors.New("unsupported extracted response data type")
 	}
 }

@@ -103,7 +103,13 @@ func (ch *CommandHandler) handleStart(code string, chatId int64, commandParam *s
 		newTracker, err := CreateTracker(ch.bot, code, 0, ch.config, chatId)
 		if err != nil {
 			log.Printf("[CommandHandler] Error creating a new tracker: %s", code)
-			helpers.SendMessageHTML(ch.bot, chatId, "Error creating a new tracker", nil)
+			message := "Failed to start the tracker :("
+			if err.Error() == "uncregonzied tracker code" {
+				message = "Invalid command, tracker with code '" + code + "' not found :("
+			}
+
+			helpers.SendMessageHTML(ch.bot, chatId, message, nil)
+
 			return err
 		}
 		ch.AddRunningTracker(newTracker)

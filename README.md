@@ -1,15 +1,12 @@
-# Web Scraper Telegram Bot
+# Price tracker Telegram Bot
 
 ## About
 
-A Telegram bot with a set of tools originally intended for acquiring whatever data neccessary from the web and notifying the user upon reaching certain criteria.
+A Telegram bot that can track prices of things and notify users upon these prices reaching certain criteria.
+
+Tracking can be done using publicly available API for Single Page Applications or by scraping website HTML.
 
 ## Available tools/functionality
-
-### Public API data tracker
-
-Can track data from freely available public API's and notify user when certain value criteria is reached.
-
 
 ### Available bot commands:
 
