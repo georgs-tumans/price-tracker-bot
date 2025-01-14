@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/joho/godotenv"
@@ -25,12 +26,13 @@ type Tracker struct {
 }
 
 type Configuration struct {
-	BotAPIKey       string     `validate:"required"`
-	WebhookURL      string     `validate:"required,url"`
-	Port            string     `validate:"omitempty,numeric"`
-	Environment     string     `validate:"required"`
-	APITrackers     []*Tracker `validate:"dive"`
-	ScraperTrackers []*Tracker `validate:"dive"`
+	BotAPIKey        string     `validate:"required"`
+	WebhookURL       string     `validate:"required,url"`
+	Port             string     `validate:"omitempty,numeric"`
+	Environment      string     `validate:"required"`
+	ErrorNotifyLimit int        `validate:"omitempty,numeric"`
+	APITrackers      []*Tracker `validate:"dive"`
+	ScraperTrackers  []*Tracker `validate:"dive"`
 }
 
 var config *Configuration
@@ -48,6 +50,14 @@ func GetConfig() *Configuration {
 			WebhookURL:  os.Getenv("WEBHOOK_URL"),
 			Port:        os.Getenv("PORT"),
 			Environment: os.Getenv("ENVIRONMENT"),
+		}
+
+		errorLimit := os.Getenv("ERROR_NOTIFY_LIMIT")
+		if errorLimit != "" {
+			converted, _ := strconv.Atoi(errorLimit)
+			config.ErrorNotifyLimit = converted
+		} else {
+			config.ErrorNotifyLimit = 3
 		}
 
 		config.APITrackers, err = loadTrackers("API_TRACKERS_FILE")

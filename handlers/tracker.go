@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 	"web_scraper_bot/config"
+	"web_scraper_bot/helpers"
 	"web_scraper_bot/utilities"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -46,6 +47,7 @@ type Tracker struct {
 	running     bool
 	chatID      int64
 	bot         *tgbotapi.BotAPI
+	errorLimit  int
 }
 
 /*
@@ -93,6 +95,7 @@ func CreateTracker(bot *tgbotapi.BotAPI, code string, runInterval time.Duration,
 		Behavior:    behavior,
 		chatID:      chatID,
 		bot:         bot,
+		errorLimit:  config.ErrorNotifyLimit,
 		Status: TrackerStatus{
 			CurrentInterval: runIntervalToUse,
 		},
@@ -125,6 +128,12 @@ func (t *Tracker) Start() {
 				if value, err := t.Behavior.Execute(t.trackerData, t.chatID); err != nil {
 					log.Printf("[Tracker] Error executing tracker '%s': %s", t.Code, err)
 					t.Status.ExecutionErrors = append(t.Status.ExecutionErrors, &TrackerExecutionError{Error: err, Timestamp: time.Now()})
+
+					// Notify the user about error accumulation
+					if len(t.Status.ExecutionErrors) >= t.errorLimit {
+						notificationMessage := fmt.Sprintf("More than %d execution errors registered for tracker <b>%s</b>, you should probably take a look at the logs :(", t.errorLimit, t.Code)
+						helpers.SendMessageHTML(t.bot, t.chatID, notificationMessage, nil)
+					}
 				} else {
 					t.Status.LastRecordedValue = value
 				}
