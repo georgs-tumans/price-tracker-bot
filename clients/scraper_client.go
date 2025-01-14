@@ -28,7 +28,7 @@ func (c *ScraperClient) FetchAndExtractData(trackerData *config.Tracker) (*DataR
 	c.trackerData = trackerData
 
 	// On every a element which has href attribute call callback
-	c.collector.OnHTML(c.trackerData.ResponsePath, func(e *colly.HTMLElement) {
+	c.collector.OnHTML(c.trackerData.DataExtractionPath, func(e *colly.HTMLElement) {
 		price = e.Text
 	})
 
@@ -42,8 +42,7 @@ func (c *ScraperClient) FetchAndExtractData(trackerData *config.Tracker) (*DataR
 		log.Println("[Scraper Client] Making a scraping request for tracker: " + c.trackerData.Code)
 	})
 
-	// TODO: rename APIURL to some more generic name to fit both API and Scraper clients
-	c.collector.Visit(trackerData.APIURL)
+	c.collector.Visit(trackerData.DataURL)
 
 	if executionError != nil {
 		return nil, executionError

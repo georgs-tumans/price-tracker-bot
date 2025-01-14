@@ -15,12 +15,12 @@ type NotifyCriteria struct {
 }
 
 type Tracker struct {
-	Code           string           `json:"code" validate:"required,excludesall=_/ "`
-	APIURL         string           `json:"apiUrl" validate:"required,url"`
-	ViewURL        string           `json:"viewUrl" validate:"omitempty,url"`
-	Interval       string           `json:"interval" validate:"required"`
-	NotifyCriteria []NotifyCriteria `json:"notifyCriteria" validate:"dive"`
-	ResponsePath   string           `json:"responsePath" validate:"required"`
+	Code               string           `json:"code" validate:"required,excludesall=_/ "`
+	DataURL            string           `json:"dataUrl" validate:"required,url"`
+	ViewURL            string           `json:"viewUrl" validate:"omitempty,url"`
+	Interval           string           `json:"interval" validate:"required"`
+	NotifyCriteria     []NotifyCriteria `json:"notifyCriteria" validate:"dive"`
+	DataExtractionPath string           `json:"dataExtractionPath" validate:"required"`
 }
 
 type Configuration struct {

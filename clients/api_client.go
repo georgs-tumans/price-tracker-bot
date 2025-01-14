@@ -56,7 +56,7 @@ func (c *PublicAPIClient) FetchAndExtractData(trackerData *config.Tracker) (*Dat
 }
 
 func (c *PublicAPIClient) getDataFromPublicAPI() ([]byte, error) {
-	response, err := services.GetRequest(c.trackerData.APIURL)
+	response, err := services.GetRequest(c.trackerData.DataURL)
 	if err != nil {
 		log.Println("[Public API Client] Error getting data from public API for tracker: "+c.trackerData.Code, err.Error())
 
@@ -71,7 +71,7 @@ func (c *PublicAPIClient) extractDataFromPublicAPIResponse(responseJson []byte) 
 		return "", errors.New("nil response data")
 	}
 
-	result := gjson.GetBytes(responseJson, c.trackerData.ResponsePath)
+	result := gjson.GetBytes(responseJson, c.trackerData.DataExtractionPath)
 	if !result.Exists() {
 		log.Println("[Public API Client] Error extracting data from public API response via the provided JSON path for tracker: "+c.trackerData.Code, "JSON path not found")
 
