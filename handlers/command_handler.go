@@ -24,6 +24,8 @@ type Command struct {
 	Type               string
 	DescriptionGeneral string
 	DescriptionTracker string
+	Hidden             bool // Whether the command shows up in the help menu
+	Params             []string
 	Handler            CommandFunc
 }
 
@@ -44,46 +46,39 @@ func NewCommandHandler(bot *tgbotapi.BotAPI) *CommandHandler {
 	}
 
 	ch.commandMap = map[string]*Command{
-		"start":    {Type: bothType, DescriptionTracker: "Run a tracker", DescriptionGeneral: "Run all available trackers", Handler: ch.handleStart},
-		"stop":     {Type: bothType, DescriptionTracker: "Stop a tracker", DescriptionGeneral: "Stop all running trackers", Handler: ch.handleStop},
-		"interval": {Type: trackerType, DescriptionTracker: "Change the tracker run interval", Handler: ch.handleSetInterval},
-		"status":   {Type: bothType, DescriptionTracker: "View a particular tracker status", DescriptionGeneral: "View status of all available trackers", Handler: ch.handleStatus},
-		"help":     {Type: generalType, DescriptionGeneral: "View all available commands", Handler: ch.handleHelp},
+		"start":    {Type: generalType, DescriptionGeneral: "Bot start command", Handler: ch.handleHelp, Hidden: true, Params: []string{"tracker_code"}},
+		"run":      {Type: bothType, DescriptionTracker: "Run a tracker", DescriptionGeneral: "Run all available trackers", Handler: ch.handleStart, Hidden: false, Params: []string{"tracker_code"}},
+		"stop":     {Type: bothType, DescriptionTracker: "Stop a tracker", DescriptionGeneral: "Stop all running trackers", Handler: ch.handleStop, Hidden: false, Params: []string{"tracker_code"}},
+		"interval": {Type: trackerType, DescriptionTracker: "Change the tracker run interval", Handler: ch.handleSetInterval, Hidden: false, Params: []string{"tracker_code", "interval*"}},
+		"status":   {Type: bothType, DescriptionTracker: "View a particular tracker status", DescriptionGeneral: "View status of all available trackers", Handler: ch.handleStatus, Hidden: false, Params: []string{"tracker_code"}},
+		"help":     {Type: generalType, DescriptionGeneral: "View all available commands", Handler: ch.handleHelp, Hidden: false},
 	}
 
 	return ch
 }
 
 func (ch *CommandHandler) HandleCommand(chatId int64, commandString string) error {
-	// Some commands may have parameters that are separated by a space (/set_interval 5m)
+	// Most commands have one parameter - tracker code - but it is possible that some may have more
 	commandParts := strings.Split(commandString, " ")
 	command := strings.ReplaceAll(commandParts[0], "/", "")
-	var commandParam *string
+	var trackerCode, commandParam *string
 
 	if len(commandParts) > 1 {
-		commandParam = &commandParts[1]
+		trackerCode = &commandParts[1]
 	}
 
-	/*Commands mostly consist of two words separated by an underscore;
-	  the first word is the command code, the second word is the actual command.
-	  There can be exceptions for commands that target all of the bot functionality instead of specific parts/clients.
-	*/
-	commandSplit := strings.Split(command, "_")
-	commandFunction := command
-	commandCode := ""
-	if len(commandSplit) > 1 {
-		commandCode = commandSplit[0]
-		commandFunction = commandSplit[1]
+	if len(commandParts) > 2 {
+		commandParam = &commandParts[2]
 	}
 
 	log.Printf("[CommandHandler] Handling command: %s", commandString)
 
-	if command, exists := ch.commandMap[commandFunction]; exists {
-		if err := command.Handler(commandCode, chatId, commandParam); err != nil {
+	if c, exists := ch.commandMap[command]; exists {
+		if err := c.Handler(utilities.GetStringPointerValue(trackerCode), chatId, commandParam); err != nil {
 			return err
 		}
 	} else {
-		log.Printf("[CommandHandler] Unknown command: %s", commandFunction)
+		log.Printf("[CommandHandler] Unknown command: %s", command)
 		helpers.SendMessageHTML(ch.bot, chatId, "Unrecognized command", nil)
 
 		return errors.New("unknown command")
@@ -301,20 +296,27 @@ func (ch *CommandHandler) handleHelp(code string, chatId int64, commandParam *st
 	}
 
 	var builder strings.Builder
-	builder.WriteString("<b>Available general commands</b>\n\n")
+	builder.WriteString("<b>Welcome to the bot help section!</b>\n")
+	builder.WriteString("You can use the bot to manage the available trackers. There are two types of commands:\n\n")
+	builder.WriteString("<b>Available general commands</b>\n")
+	builder.WriteString("These are also available from the menu button and they do not accept parameters\n\n")
 
 	for command, cmd := range ch.commandMap {
-		if cmd.Type == generalType || cmd.Type == bothType {
+		if !cmd.Hidden && (cmd.Type == generalType || cmd.Type == bothType) {
 			builder.WriteString(fmt.Sprintf(" - /%s - %s\n", command, cmd.DescriptionGeneral))
 		}
 	}
 
-	builder.WriteString("\n<b>Available tracker specific commands</b>\n\n")
+	builder.WriteString("\n<b>Available tracker specific commands</b>\n")
+	builder.WriteString("These require at minimum one parameter - tracker code\n\n")
 	for command, cmd := range ch.commandMap {
-		if cmd.Type == trackerType || cmd.Type == bothType {
-			builder.WriteString(fmt.Sprintf(" - /%s - %s\n", command, cmd.DescriptionTracker))
+		if !cmd.Hidden && (cmd.Type == trackerType || cmd.Type == bothType) {
+			builder.WriteString(formatCommandWithParams(command, cmd.Params, cmd.DescriptionTracker) + "\n")
 		}
 	}
+
+	builder.WriteString("\n<b>*</b>Interval parameter format: \n<i>[number][interval type]</i> (e.g. 5m, 1h, 2d)\n")
+	builder.WriteString("\nAvailable interval types: \n'm'(minute), 'h'(hour), 'd'(day)\n")
 
 	helpers.SendMessageHTML(ch.bot, chatId, builder.String(), nil)
 
@@ -354,4 +356,17 @@ func (ch *CommandHandler) RemoveRunningTracker(trackerCode string) {
 			return
 		}
 	}
+}
+
+func formatCommandWithParams(command string, params []string, description string) string {
+	var builder strings.Builder
+	builder.WriteString(" - /" + command)
+
+	for _, param := range params {
+		builder.WriteString(" &lt;" + param + "&gt;")
+	}
+
+	builder.WriteString("\n   " + description)
+
+	return builder.String()
 }

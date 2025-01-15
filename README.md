@@ -13,14 +13,14 @@ Tracking can be done using publicly available API for Single Page Applications o
 General commands:
  - `/status` - prints status of the configured trackers
  - `/help` - prints all available commands
- - `/start` - runs all available trackers
+ - `/run` - runs all available trackers
  - `/stop` - stops all running trackers
 
  Tracker specific commands:
- - `/<tracker_code>_start` - starts a tracker
- - `/<tracker_code>_stop` - stops a tracker
- - `/<tracker_code>_status` - prints tracker status
- - `/<tracker_code>_interval <number><interval type>` - sets tracker run interval. Example command: `/bonds_interval 1h`. Available interval types: 'm'(minute), 'h'(hour), 'd'(day)
+ - `/run <tracker_code>` - starts a tracker
+ - `/stop <tracker_code>` - stops a tracker
+ - `/status <tracker_code>` - prints tracker status
+ - `/interval <tracker_code> <interval_value>` - sets tracker run interval. Example command: `/interval bonds 1h`. Available interval types: 'm'(minute), 'h'(hour), 'd'(day)
 
 ## Preconditions
 
