@@ -21,11 +21,20 @@ func SendMessageHTML(bot *tgbotapi.BotAPI, chatId int64, text string, entities [
 	log.Printf("[Bot fixer] Sent message to chat: %d; Message: %s", chatId, text)
 }
 
-// func SendMenu(bot *tgbotapi.BotAPI, chatId int64) error {
-// 	msg := tgbotapi.NewMessage(chatId, firstMenu)
-// 	msg.ParseMode = tgbotapi.ModeHTML
-// 	msg.ReplyMarkup = firstMenuMarkup
-// 	_, err := bot.Send(msg)
+func SendMessageHTMLWithMenu(bot *tgbotapi.BotAPI, chatId int64, text string, entities []tgbotapi.MessageEntity, menu tgbotapi.InlineKeyboardMarkup) {
+	msg := tgbotapi.NewMessage(chatId, text)
+	if len(entities) > 0 {
+		msg.Entities = entities
+	}
 
-// 	return err
-// }
+	msg.ParseMode = tgbotapi.ModeHTML
+	msg.ReplyMarkup = menu
+
+	_, err := bot.Send(msg)
+
+	if err != nil {
+		log.Printf("[Bot fixer] Error sending a message: %s", err.Error())
+	}
+
+	log.Printf("[Bot fixer] Sent message to chat: %d; Message: %s", chatId, text)
+}

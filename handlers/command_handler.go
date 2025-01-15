@@ -224,29 +224,31 @@ func (ch *CommandHandler) handleSetInterval(code string, chatId int64, commandPa
 }
 
 func (ch *CommandHandler) handleStatus(code string, chatId int64, commandParam *string) error {
+	var statusMenu = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Run all trackers", "/run"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Stop all trackers", "/stop"),
+		),
+	)
+
 	if code == "" {
 		// Handle the case when the user wants to see the status of all trackers
 		var builder strings.Builder
 		builder.WriteString("<b>All available trackers</b>\n\n")
 		for _, tracker := range ch.config.APITrackers {
-			activeStatus := "inactive"
-			if ch.GetActiveTracker(tracker.Code) != nil {
-				activeStatus = "active"
-			}
-
+			activeStatus := ch.processTrackerStatus(tracker, &statusMenu)
 			builder.WriteString(fmt.Sprintf("Tracker: %s | Status: %s | Type: API\n", tracker.Code, activeStatus))
 		}
 
 		for _, tracker := range ch.config.ScraperTrackers {
-			activeStatus := "inactive"
-			if ch.GetActiveTracker(tracker.Code) != nil {
-				activeStatus = "active"
-			}
-
+			activeStatus := ch.processTrackerStatus(tracker, &statusMenu)
 			builder.WriteString(fmt.Sprintf("Tracker: %s | Status: %s | Type: Scraper\n", tracker.Code, activeStatus))
 		}
 
-		helpers.SendMessageHTML(ch.bot, chatId, builder.String(), nil)
+		helpers.SendMessageHTMLWithMenu(ch.bot, chatId, builder.String(), nil, statusMenu)
+
 		return nil
 	}
 
@@ -369,4 +371,23 @@ func formatCommandWithParams(command string, params []string, description string
 	builder.WriteString("\n   " + description)
 
 	return builder.String()
+}
+
+func (ch *CommandHandler) processTrackerStatus(tracker *config.Tracker, menu *tgbotapi.InlineKeyboardMarkup) string {
+	menuRow := tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("Status "+tracker.Code, "/status "+tracker.Code),
+	)
+
+	var activeStatus string
+	if ch.GetActiveTracker(tracker.Code) != nil {
+		activeStatus = "active"
+		menuRow = append(menuRow, tgbotapi.NewInlineKeyboardButtonData("Stop "+tracker.Code, "/stop "+tracker.Code))
+	} else {
+		activeStatus = "inactive"
+		menuRow = append(menuRow, tgbotapi.NewInlineKeyboardButtonData("Start "+tracker.Code, "/run "+tracker.Code))
+	}
+
+	menu.InlineKeyboard = append(menu.InlineKeyboard, menuRow)
+
+	return activeStatus
 }
