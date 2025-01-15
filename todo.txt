@@ -5,7 +5,7 @@
 - pamēģināt entities messagiem
 
 Rindas kārtība:
-- GUI - trackeru pārvaldīšana ar pogām
+- menu aizvietošanas, atgriežoties uz iepriekšēju menu
 - ierobežojums uz trackinga regularitāti (?)
 - readme - par konfigurāciju
 - derētu pie paziņojumā norādītās summas pielikt atbilstošu valūtas simbolu

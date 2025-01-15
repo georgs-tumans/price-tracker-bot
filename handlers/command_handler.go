@@ -224,17 +224,17 @@ func (ch *CommandHandler) handleSetInterval(code string, chatId int64, commandPa
 }
 
 func (ch *CommandHandler) handleStatus(code string, chatId int64, commandParam *string) error {
-	var statusMenu = tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("Run all trackers", "/run"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("Stop all trackers", "/stop"),
-		),
-	)
-
+	// Handle the case when the user wants to see the status of all trackers
 	if code == "" {
-		// Handle the case when the user wants to see the status of all trackers
+		var statusMenu = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("Run all trackers", "/run"),
+			),
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("Stop all trackers", "/stop"),
+			),
+		)
+
 		var builder strings.Builder
 		builder.WriteString("<b>All available trackers</b>\n\n")
 		for _, tracker := range ch.config.APITrackers {
@@ -252,10 +252,16 @@ func (ch *CommandHandler) handleStatus(code string, chatId int64, commandParam *
 		return nil
 	}
 
+	var backMenu = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(" << Back to all tracker status", "/status"),
+		),
+	)
+
 	tracker := ch.GetActiveTracker(code)
 	if tracker == nil {
 		log.Printf("[CommandHandler] Tracker '%s' is not active", code)
-		helpers.SendMessageHTML(ch.bot, chatId, "Tracker '"+code+"' is not active", nil)
+		helpers.SendMessageHTMLWithMenu(ch.bot, chatId, "Tracker '"+code+"' is not active", nil, backMenu)
 
 		return errors.New("tracker not found")
 	}
@@ -283,7 +289,7 @@ func (ch *CommandHandler) handleStatus(code string, chatId int64, commandParam *
 	builder.WriteString("Current run interval: " + utilities.DurationToString(tracker.Status.CurrentInterval) + "\n")
 	builder.WriteString("Execution errors count: " + strconv.Itoa(len(tracker.Status.ExecutionErrors)) + "\n")
 
-	helpers.SendMessageHTML(ch.bot, chatId, builder.String(), nil)
+	helpers.SendMessageHTMLWithMenu(ch.bot, chatId, builder.String(), nil, backMenu)
 
 	return nil
 }
