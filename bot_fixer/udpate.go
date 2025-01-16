@@ -74,17 +74,44 @@ func (b *BotFixer) handleMessage(message *tgbotapi.Message) {
 
 	// TODO switch to the tgbotapi methods for working with messages/commands - message.IsCommand(), message.CommandArguments(), etc.
 	if message.IsCommand() {
-		if err := b.CommandHandler.HandleCommand(message.Chat.ID, text, nil); err != nil {
+		b.CommandHandler.GetUserNavigationState(message.Chat.ID).BackButtonEnabled = false
+		if err := b.CommandHandler.HandleCommand(message.Chat.ID, text, nil, false); err != nil {
 			log.Printf("[Bot fixer] An error occured while handling command: %s", err.Error())
 
 			return
 		}
+
+		return
+	}
+
+	// Handle user input after a certain command/action has requested it
+	if b.CommandHandler.AwaitingUserInput {
+		b.CommandHandler.GetUserNavigationState(message.Chat.ID).BackButtonEnabled = true
+		if err := b.CommandHandler.HandleUserInput(message.Chat.ID, text, nil); err != nil {
+			log.Printf("[Bot fixer] An error occured while handling user input: %s", err.Error())
+
+			return
+		}
+
+		return
 	}
 }
 
 func (b *BotFixer) handleButton(query *tgbotapi.CallbackQuery) {
 	command := query.Data
-	if err := b.CommandHandler.HandleCommand(query.Message.Chat.ID, command, &query.Message.MessageID); err != nil {
+	b.CommandHandler.GetUserNavigationState(query.Message.Chat.ID).BackButtonEnabled = true
+
+	if command == "back" {
+		if err := b.CommandHandler.HandleReturn(query.Message.Chat.ID, &query.Message.MessageID); err != nil {
+			log.Printf("[Bot fixer] An error occured while handling button: %s", err.Error())
+
+			return
+		}
+
+		return
+	}
+
+	if err := b.CommandHandler.HandleCommand(query.Message.Chat.ID, command, &query.Message.MessageID, false); err != nil {
 		log.Printf("[Bot fixer] An error occured while handling button: %s", err.Error())
 
 		return

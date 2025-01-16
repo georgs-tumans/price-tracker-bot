@@ -30,27 +30,24 @@ type Command struct {
 	Handler            CommandFunc
 }
 
-type NavigationState struct {
-	CurrentCommand    Command
-	PreviousCommand   Command
-	CallbackMessageID *int
-}
-
 type CommandHandler struct {
-	config          *config.Configuration
-	runningTrackers []*Tracker
-	commandMap      map[string]*Command
-	bot             *tgbotapi.BotAPI
-	mu              sync.Mutex
-	navigation      NavigationState
+	AwaitingUserInput bool
+	config            *config.Configuration
+	runningTrackers   []*Tracker
+	commandMap        map[string]*Command
+	bot               *tgbotapi.BotAPI
+	mu                sync.Mutex
+	Navigation        map[int64]*NavigationState
 }
 
 type CommandFunc func(code string, chatId int64, commandParam *string) error
 
 func NewCommandHandler(bot *tgbotapi.BotAPI) *CommandHandler {
 	ch := &CommandHandler{
-		config: config.GetConfig(),
-		bot:    bot,
+		config:            config.GetConfig(),
+		bot:               bot,
+		AwaitingUserInput: false,
+		Navigation:        make(map[int64]*NavigationState),
 	}
 
 	ch.commandMap = map[string]*Command{
@@ -65,9 +62,9 @@ func NewCommandHandler(bot *tgbotapi.BotAPI) *CommandHandler {
 	return ch
 }
 
-func (ch *CommandHandler) HandleCommand(chatId int64, commandString string, callbackMessageID *int) error {
+func (ch *CommandHandler) HandleCommand(chatId int64, commandString string, callbackMessageID *int, isReturn bool) error {
 	// Message ID is only available when handling commands as a result of a button callback
-	ch.navigation.CallbackMessageID = callbackMessageID
+	ch.GetUserNavigationState(chatId).CallbackMessageID = callbackMessageID
 
 	// Most commands have one parameter - tracker code - but it is possible that some may have more
 	commandParts := strings.Split(commandString, " ")
@@ -85,13 +82,13 @@ func (ch *CommandHandler) HandleCommand(chatId int64, commandString string, call
 	log.Printf("[CommandHandler] Handling command: %s", commandString)
 
 	if c, exists := ch.commandMap[command]; exists {
-		ch.navigation.PreviousCommand = Command{
-			Command: ch.navigation.CurrentCommand.Command,
-			Params:  ch.navigation.CurrentCommand.Params,
-		}
-		ch.navigation.CurrentCommand = Command{
-			Command: command,
-			Params:  []string{utilities.GetStringPointerValue(trackerCode), utilities.GetStringPointerValue(commandParam)},
+		if !isReturn {
+			ch.GetUserNavigationState(chatId).Push(
+				&Command{
+					Command: command,
+					Params:  []string{utilities.GetStringPointerValue(trackerCode), utilities.GetStringPointerValue(commandParam)},
+				},
+			)
 		}
 
 		if err := c.Handler(utilities.GetStringPointerValue(trackerCode), chatId, commandParam); err != nil {
@@ -103,6 +100,39 @@ func (ch *CommandHandler) HandleCommand(chatId int64, commandString string, call
 		helpers.SendMessageHTML(ch.bot, chatId, "Unrecognized command", nil)
 
 		return errors.New("unknown command")
+	}
+
+	return nil
+}
+
+func (ch *CommandHandler) HandleReturn(chatId int64, callbackMessageID *int) error {
+	ch.GetUserNavigationState(chatId).Pop()
+	gotoCommand := ch.GetUserNavigationState(chatId).Peek()
+
+	commandString := "/" + gotoCommand.Command
+	if len(gotoCommand.Params) > 0 {
+		commandString += " " + strings.Join(gotoCommand.Params, " ")
+	}
+
+	if err := ch.HandleCommand(chatId, commandString, callbackMessageID, true); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (ch *CommandHandler) HandleUserInput(chatId int64, userInput string, callbackMessageID *int) error {
+	ch.AwaitingUserInput = false
+	gotoCommand := ch.GetUserNavigationState(chatId).Peek()
+	commandString := "/" + gotoCommand.Command
+	if len(gotoCommand.Params) > 0 {
+		commandString += " " + strings.Join(gotoCommand.Params, " ")
+	}
+
+	commandString = strings.TrimSpace(commandString) + " " + userInput
+
+	if err := ch.HandleCommand(chatId, commandString, callbackMessageID, true); err != nil {
+		return err
 	}
 
 	return nil
@@ -213,6 +243,14 @@ func (ch *CommandHandler) StopAllTrackers() {
 }
 
 func (ch *CommandHandler) handleSetInterval(code string, chatId int64, commandParam *string) error {
+	// Means command was initiated from a menu with a button
+	if ch.GetUserNavigationState(chatId).CallbackMessageID != nil {
+		helpers.SendMessageHTML(ch.bot, chatId, "Please type the new interval value below:", nil)
+		ch.AwaitingUserInput = true
+
+		return nil
+	}
+
 	if commandParam == nil {
 		log.Printf("[CommandHandler] No interval value provided")
 		ch.handleCommandMessage(chatId, "No interval value provided", nil)
@@ -270,8 +308,8 @@ func (ch *CommandHandler) handleStatus(code string, chatId int64, commandParam *
 
 		// If we are navigating back to the status menu after a back button click, edit the existing message instead of sending a new one.
 		// New message is sent if the status menu is invoked by a written command meaning we are not returning from a back button click.
-		if ch.navigation.CallbackMessageID != nil {
-			helpers.EditMessageWithMenu(ch.bot, chatId, *ch.navigation.CallbackMessageID, builder.String(), statusMenu)
+		if ch.GetUserNavigationState(chatId).CallbackMessageID != nil {
+			helpers.EditMessageWithMenu(ch.bot, chatId, *ch.GetUserNavigationState(chatId).CallbackMessageID, builder.String(), statusMenu)
 		} else {
 			helpers.SendMessageHTMLWithMenu(ch.bot, chatId, builder.String(), nil, statusMenu)
 		}
@@ -432,13 +470,12 @@ func (ch *CommandHandler) processTrackerStatus(tracker *config.Tracker, menu *tg
 }
 
 func (ch *CommandHandler) handleCommandMessage(chatId int64, message string, menu *tgbotapi.InlineKeyboardMarkup) {
-	// If the current menu/command was opened as a result of a button click from the status menu, show a back button that returns to it.
-	if ch.navigation.PreviousCommand.Command == "status" && ch.navigation.CallbackMessageID != nil {
+	if ch.GetUserNavigationState(chatId).BackButtonEnabled {
 		backButtonRow := tgbotapi.NewInlineKeyboardRow(
-			//tgbotapi.NewInlineKeyboardButtonData(" << Back to all tracker status", "/status "+strings.Join(ch.navigation.CurrentCommand.Params, " ")),
-			tgbotapi.NewInlineKeyboardButtonData(" << Back to all tracker status", "/status"),
+			tgbotapi.NewInlineKeyboardButtonData(" << Return", "back"),
 		)
 
+		// If the message being sent already has a menu, attach the back button to it otherwise create a new menu with the back button.
 		if menu != nil {
 			menu.InlineKeyboard = append(menu.InlineKeyboard, backButtonRow)
 		} else {
@@ -448,16 +485,30 @@ func (ch *CommandHandler) handleCommandMessage(chatId int64, message string, men
 			menu = &backButtonMenu
 		}
 
-		if ch.navigation.CallbackMessageID == nil {
+		// If the message was sent as a result of a button click, edit the existing message instead of sending a new one.
+		callbackMessageID := ch.GetUserNavigationState(chatId).CallbackMessageID
+		if callbackMessageID == nil {
 			helpers.SendMessageHTMLWithMenu(ch.bot, chatId, message, nil, *menu)
-		} else {
-			helpers.EditMessageWithMenu(ch.bot, chatId, *ch.navigation.CallbackMessageID, message, *menu)
+			return
 		}
-	} else {
-		if menu != nil {
-			helpers.SendMessageHTMLWithMenu(ch.bot, chatId, message, nil, *menu)
-		} else {
-			helpers.SendMessageHTML(ch.bot, chatId, message, nil)
-		}
+
+		helpers.EditMessageWithMenu(ch.bot, chatId, *callbackMessageID, message, *menu)
+
+		return
 	}
+
+	if menu != nil {
+		helpers.SendMessageHTMLWithMenu(ch.bot, chatId, message, nil, *menu)
+		return
+	}
+
+	helpers.SendMessageHTML(ch.bot, chatId, message, nil)
+}
+
+func (ch *CommandHandler) GetUserNavigationState(chatID int64) *NavigationState {
+	if _, exists := ch.Navigation[chatID]; !exists {
+		ch.Navigation[chatID] = &NavigationState{}
+	}
+
+	return ch.Navigation[chatID]
 }
