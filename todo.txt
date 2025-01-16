@@ -5,7 +5,11 @@
 - pamēģināt entities messagiem
 
 Rindas kārtība:
-- menu aizvietošanas, atgriežoties uz iepriekšēju menu
+- turpināt ar pogām konkrētu trackeru satusa skatā:
+    - padziļināta navigācija ar back pogām, lai var atgriezties ne tikai uz kopējo statusu bet arī individuālajiem trackeru statusiem
+    - sataisīt intervāla norādīšanas opcijas, back pogu
+    - sataisīt run/stop ar atgriešanos pogu
+- menu izveides koda iznešana uz ui helperi (?)
 - ierobežojums uz trackinga regularitāti (?)
 - readme - par konfigurāciju
 - derētu pie paziņojumā norādītās summas pielikt atbilstošu valūtas simbolu
