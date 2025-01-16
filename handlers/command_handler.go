@@ -30,8 +30,9 @@ type Command struct {
 }
 
 type NavigationState struct {
-	CurrentCommand  string
-	PreviousCommand string
+	CurrentCommand    string
+	PreviousCommand   string
+	CallbackMessageID *int
 }
 
 type CommandHandler struct {
@@ -63,7 +64,10 @@ func NewCommandHandler(bot *tgbotapi.BotAPI) *CommandHandler {
 	return ch
 }
 
-func (ch *CommandHandler) HandleCommand(chatId int64, commandString string) error {
+func (ch *CommandHandler) HandleCommand(chatId int64, commandString string, callbackMessageID *int) error {
+	// Message ID is only available when handling commands as a result of a button callback
+	ch.navigation.CallbackMessageID = callbackMessageID
+
 	// Most commands have one parameter - tracker code - but it is possible that some may have more
 	commandParts := strings.Split(commandString, " ")
 	command := strings.ReplaceAll(commandParts[0], "/", "")
@@ -257,7 +261,13 @@ func (ch *CommandHandler) handleStatus(code string, chatId int64, commandParam *
 			builder.WriteString(fmt.Sprintf("Tracker: %s | Status: %s | Type: Scraper\n", tracker.Code, activeStatus))
 		}
 
-		helpers.SendMessageHTMLWithMenu(ch.bot, chatId, builder.String(), nil, statusMenu)
+		// If we are navigating back to the status menu after a back button click, edit the existing message instead of sending a new one.
+		// New message is sent if the status menu is invoked by a written command meaning we are not returning from a back button click.
+		if ch.navigation.CallbackMessageID != nil {
+			helpers.EditMessageWithMenu(ch.bot, chatId, *ch.navigation.CallbackMessageID, builder.String(), statusMenu)
+		} else {
+			helpers.SendMessageHTMLWithMenu(ch.bot, chatId, builder.String(), nil, statusMenu)
+		}
 
 		return nil
 	}
@@ -403,16 +413,20 @@ func (ch *CommandHandler) processTrackerStatus(tracker *config.Tracker, menu *tg
 }
 
 func (ch *CommandHandler) handleCommandMessage(chatId int64, message string) {
-	if ch.navigation.PreviousCommand == "/status" {
+	// If the current menu/command was opened as a result of a button click from the status menu, show a back button that returns to it.
+	if ch.navigation.PreviousCommand == "/status" && ch.navigation.CallbackMessageID != nil {
 		var backButton = tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData(" << Back to all tracker status", "/status"),
 			),
 		)
 
-		helpers.SendMessageHTMLWithMenu(ch.bot, chatId, message, nil, backButton)
+		if ch.navigation.CallbackMessageID == nil {
+			helpers.SendMessageHTMLWithMenu(ch.bot, chatId, message, nil, backButton)
+		} else {
+			helpers.EditMessageWithMenu(ch.bot, chatId, *ch.navigation.CallbackMessageID, message, backButton)
+		}
 	} else {
 		helpers.SendMessageHTML(ch.bot, chatId, message, nil)
 	}
-
 }

@@ -74,7 +74,7 @@ func (b *BotFixer) handleMessage(message *tgbotapi.Message) {
 
 	// TODO switch to the tgbotapi methods for working with messages/commands - message.IsCommand(), message.CommandArguments(), etc.
 	if message.IsCommand() {
-		if err := b.CommandHandler.HandleCommand(message.Chat.ID, text); err != nil {
+		if err := b.CommandHandler.HandleCommand(message.Chat.ID, text, nil); err != nil {
 			log.Printf("[Bot fixer] An error occured while handling command: %s", err.Error())
 
 			return
@@ -84,28 +84,9 @@ func (b *BotFixer) handleMessage(message *tgbotapi.Message) {
 
 func (b *BotFixer) handleButton(query *tgbotapi.CallbackQuery) {
 	command := query.Data
-	if err := b.CommandHandler.HandleCommand(query.Message.Chat.ID, command); err != nil {
+	if err := b.CommandHandler.HandleCommand(query.Message.Chat.ID, command, &query.Message.MessageID); err != nil {
 		log.Printf("[Bot fixer] An error occured while handling button: %s", err.Error())
 
 		return
 	}
-	// var text string
-	// markup := tgbotapi.NewInlineKeyboardMarkup()
-	// message := query.Message
-
-	// if query.Data == nextButton {
-	// 	text = secondMenu
-	// 	markup = secondMenuMarkup
-	// } else if query.Data == backButton {
-	// 	text = firstMenu
-	// 	markup = firstMenuMarkup
-	// }
-
-	// callbackCfg := tgbotapi.NewCallback(query.ID, "")
-	// b.Bot.Send(callbackCfg)
-
-	// // Replace menu text and keyboard
-	// msg := tgbotapi.NewEditMessageTextAndMarkup(message.Chat.ID, message.MessageID, text, markup)
-	// msg.ParseMode = tgbotapi.ModeHTML
-	// b.Bot.Send(msg)
 }
