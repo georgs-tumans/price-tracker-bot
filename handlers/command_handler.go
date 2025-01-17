@@ -31,23 +31,25 @@ type Command struct {
 }
 
 type CommandHandler struct {
-	AwaitingUserInput bool
-	config            *config.Configuration
-	runningTrackers   []*Tracker
-	commandMap        map[string]*Command
-	bot               *tgbotapi.BotAPI
-	mu                sync.Mutex
-	Navigation        map[int64]*NavigationState
+	AwaitingUserInput    bool
+	CustomKeyboardActive bool
+	config               *config.Configuration
+	runningTrackers      []*Tracker
+	commandMap           map[string]*Command
+	bot                  *tgbotapi.BotAPI
+	mu                   sync.Mutex
+	Navigation           map[int64]*NavigationState
 }
 
 type CommandFunc func(code string, chatId int64, commandParam *string) error
 
 func NewCommandHandler(bot *tgbotapi.BotAPI) *CommandHandler {
 	ch := &CommandHandler{
-		config:            config.GetConfig(),
-		bot:               bot,
-		AwaitingUserInput: false,
-		Navigation:        make(map[int64]*NavigationState),
+		config:               config.GetConfig(),
+		bot:                  bot,
+		AwaitingUserInput:    false,
+		CustomKeyboardActive: false,
+		Navigation:           make(map[int64]*NavigationState),
 	}
 
 	ch.commandMap = map[string]*Command{
@@ -123,6 +125,12 @@ func (ch *CommandHandler) HandleReturn(chatId int64, callbackMessageID *int) err
 
 func (ch *CommandHandler) HandleUserInput(chatId int64, userInput string, callbackMessageID *int) error {
 	ch.AwaitingUserInput = false
+	// Hide keyboard after user input
+	if ch.CustomKeyboardActive {
+		helpers.SendMessageRemoveKeyboard(ch.bot, chatId)
+		ch.CustomKeyboardActive = false
+	}
+
 	gotoCommand := ch.GetUserNavigationState(chatId).Peek()
 	commandString := "/" + gotoCommand.Command
 	if len(gotoCommand.Params) > 0 {
@@ -245,7 +253,21 @@ func (ch *CommandHandler) StopAllTrackers() {
 func (ch *CommandHandler) handleSetInterval(code string, chatId int64, commandParam *string) error {
 	// Means command was initiated from a menu with a button
 	if ch.GetUserNavigationState(chatId).CallbackMessageID != nil {
-		helpers.SendMessageHTML(ch.bot, chatId, "Send me the new interval value!\n\nThe format: <i>[number][interval type*]</i>\n\nAvailable interval types: \n'm'(minute), 'h'(hour), 'd'(day)", nil)
+		customKeyboard := tgbotapi.NewOneTimeReplyKeyboard(
+			tgbotapi.NewKeyboardButtonRow(
+				tgbotapi.NewKeyboardButton("10m"),
+				tgbotapi.NewKeyboardButton("1h"),
+				tgbotapi.NewKeyboardButton("1d"),
+			),
+		)
+
+		ch.CustomKeyboardActive = true
+		helpers.SendMessageHTMLWithKeyboard(
+			ch.bot,
+			chatId, "Send me the new interval value!\n\nThe format: <i>[number][interval type*]</i>\n\nAvailable interval types: \n'm'(minute), 'h'(hour), 'd'(day)",
+			nil,
+			customKeyboard,
+		)
 		ch.AwaitingUserInput = true
 
 		return nil
