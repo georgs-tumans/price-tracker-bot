@@ -1,4 +1,4 @@
-package bot_fixer
+package botfixer
 
 import (
 	"context"

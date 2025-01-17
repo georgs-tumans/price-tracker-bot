@@ -4,12 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"pricetrackerbot/config"
+	"pricetrackerbot/helpers"
+	"pricetrackerbot/utilities"
 	"strconv"
 	"strings"
 	"sync"
-	"web_scraper_bot/config"
-	"web_scraper_bot/helpers"
-	"web_scraper_bot/utilities"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )

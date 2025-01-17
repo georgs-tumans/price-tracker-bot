@@ -3,10 +3,10 @@ package clients
 import (
 	"fmt"
 	"log"
+	config "pricetrackerbot/config"
+	"pricetrackerbot/helpers"
 	"strconv"
 	"strings"
-	config "web_scraper_bot/config"
-	"web_scraper_bot/helpers"
 )
 
 type DataResult struct {

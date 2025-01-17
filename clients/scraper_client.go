@@ -4,10 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	config "pricetrackerbot/config"
 	"regexp"
 	"strconv"
 	"strings"
-	config "web_scraper_bot/config"
 
 	"github.com/gocolly/colly/v2"
 )

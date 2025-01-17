@@ -2,8 +2,8 @@ package helpers
 
 import (
 	"fmt"
+	"pricetrackerbot/config"
 	"strings"
-	"web_scraper_bot/config"
 )
 
 func FormatNotificationCriteriaString(notifyCriteria []config.NotifyCriteria) string {

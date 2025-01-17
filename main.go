@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 	"log"
+	"pricetrackerbot/botfixer"
 	"strings"
-	"web_scraper_bot/bot_fixer"
 )
 
 func main() {
@@ -18,7 +18,7 @@ func main() {
 	}()
 
 	log.Println("Starting bot service")
-	botFixer := bot_fixer.NewBotFixer()
+	botFixer := botfixer.NewBotFixer()
 	config := botFixer.Config
 
 	if strings.ToLower(strings.TrimSpace(config.Environment)) == "local" {

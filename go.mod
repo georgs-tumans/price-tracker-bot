@@ -1,4 +1,4 @@
-module web_scraper_bot
+module pricetrackerbot
 
 go 1.23.2
 

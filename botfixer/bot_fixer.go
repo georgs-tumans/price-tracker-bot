@@ -1,12 +1,12 @@
-package bot_fixer
+package botfixer
 
 import (
 	"context"
 	"log"
 	"net/http"
-	"web_scraper_bot/config"
-	"web_scraper_bot/handlers"
-	"web_scraper_bot/services"
+	"pricetrackerbot/config"
+	"pricetrackerbot/handlers"
+	"pricetrackerbot/services"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -15,9 +15,8 @@ type BotFixer struct {
 	Bot               *tgbotapi.BotAPI
 	Config            *config.Configuration
 	BondsClientActive bool
-	//BondsHandler      *BondsHandler
-	CommandHandler *handlers.CommandHandler
-	TelegramBotAPI string
+	CommandHandler    *handlers.CommandHandler
+	TelegramBotAPI    string
 }
 
 func NewBotFixer() *BotFixer {
@@ -33,7 +32,6 @@ func NewBotFixer() *BotFixer {
 		return nil
 	}
 
-	//botFixer.BondsHandler = NewBondsHandler(botFixer)
 	botFixer.CommandHandler = handlers.NewCommandHandler(botFixer.Bot)
 
 	return botFixer

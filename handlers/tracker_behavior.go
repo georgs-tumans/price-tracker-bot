@@ -2,9 +2,9 @@ package handlers
 
 import (
 	"fmt"
-	"web_scraper_bot/clients"
-	"web_scraper_bot/config"
-	"web_scraper_bot/helpers"
+	"pricetrackerbot/clients"
+	"pricetrackerbot/config"
+	"pricetrackerbot/helpers"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )

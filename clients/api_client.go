@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	config "pricetrackerbot/config"
+	"pricetrackerbot/services"
 	"strconv"
-	config "web_scraper_bot/config"
-	"web_scraper_bot/services"
 
 	"github.com/tidwall/gjson"
 )

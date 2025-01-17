@@ -1,4 +1,4 @@
-# Price tracker Telegram Bot
+# Price Tracker Telegram Bot
 
 ## About
 
