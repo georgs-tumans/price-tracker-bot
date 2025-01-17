@@ -11,13 +11,13 @@ func GetReturnButtonMenu(existingMenu *tgbotapi.InlineKeyboardMarkup) *tgbotapi.
 	if existingMenu != nil {
 		existingMenu.InlineKeyboard = append(existingMenu.InlineKeyboard, backButtonRow)
 		return existingMenu
-	} else {
-		backButtonMenu := tgbotapi.NewInlineKeyboardMarkup(
-			backButtonRow,
-		)
-
-		return &backButtonMenu
 	}
+
+	backButtonMenu := tgbotapi.NewInlineKeyboardMarkup(
+		backButtonRow,
+	)
+
+	return &backButtonMenu
 }
 
 func GetIntervalCustomMenu() *tgbotapi.ReplyKeyboardMarkup {

@@ -32,13 +32,13 @@ func (c *ScraperClient) FetchAndExtractData(trackerData *config.Tracker) (*DataR
 		price = e.Text
 	})
 
-	c.collector.OnError(func(r *colly.Response, err error) {
+	c.collector.OnError(func(_ *colly.Response, err error) {
 		log.Printf("[Scraper Client] Error while making scraping request for tracker %s: %s", c.trackerData.Code, err.Error())
 		executionError = err
 	})
 
 	log.Println("[Scraper Client] Making a scraping request for tracker: " + c.trackerData.Code)
-	c.collector.Visit(trackerData.DataURL)
+	executionError = c.collector.Visit(trackerData.DataURL)
 
 	if executionError != nil {
 		return nil, executionError
@@ -51,7 +51,7 @@ func (c *ScraperClient) FetchAndExtractData(trackerData *config.Tracker) (*DataR
 
 	reg := regexp.MustCompile(`[^0-9.,]`)
 	cleanPrice := reg.ReplaceAllString(strings.TrimSpace(price), "")
-	cleanPrice = strings.Replace(cleanPrice, ",", ".", -1)
+	cleanPrice = strings.ReplaceAll(cleanPrice, ",", ".")
 
 	priceFloat, err := strconv.ParseFloat(cleanPrice, 64)
 	if err != nil {

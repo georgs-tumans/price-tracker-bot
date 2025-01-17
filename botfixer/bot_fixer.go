@@ -4,8 +4,10 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+
 	"pricetrackerbot/config"
 	"pricetrackerbot/handlers"
 	"pricetrackerbot/services"
@@ -79,7 +81,17 @@ func (b *BotFixer) InitializeBotWebhook() {
 
 	log.Println("[Bot fixer] Starting server on port " + b.Config.Port)
 	log.Println("[Bot fixer] Bot initialized via the webhook approach; listening for updates")
-	log.Fatal(http.ListenAndServe(":"+b.Config.Port, nil))
+
+	//nolint:mnd
+	srv := &http.Server{
+		Addr:              ":" + b.Config.Port,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       30 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		Handler:           nil,
+	}
+	log.Fatal(srv.ListenAndServe())
 }
 
 func (b *BotFixer) DeleteWebhook() error {

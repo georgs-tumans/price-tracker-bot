@@ -24,7 +24,7 @@ func main() {
 
 	if strings.ToLower(strings.TrimSpace(config.Environment)) == "local" {
 		if err := botFixer.DeleteWebhook(); err != nil {
-			log.Fatalf("[main] Error deleting webhook: %v", err)
+			log.Printf("[main] Error deleting webhook: %v", err)
 		}
 		botFixer.InitializeBotLongPolling()
 	} else {

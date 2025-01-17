@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+const (
+	minute = 60
+	day    = 24
+)
+
 // Parses durations from a string including support for "d" as days.
 //
 // Available time units are "m", "h", "d". Anything other than these is not allowed.
@@ -29,7 +34,7 @@ func ParseDurationWithDays(s string) (time.Duration, error) {
 			return 0, err
 		}
 
-		return days * 24, nil
+		return days * day, nil
 	}
 
 	return time.ParseDuration(s)
@@ -37,8 +42,8 @@ func ParseDurationWithDays(s string) (time.Duration, error) {
 
 func DurationToString(d time.Duration) string {
 	hours := int(d.Hours())
-	minutes := int(d.Minutes()) % 60
-	seconds := int(d.Seconds()) % 60
+	minutes := int(d.Minutes()) % minute
+	seconds := int(d.Seconds()) % minute
 
 	if hours > 0 {
 		return fmt.Sprintf("%dh %dm %ds", hours, minutes, seconds)

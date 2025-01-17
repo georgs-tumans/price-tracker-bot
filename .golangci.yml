@@ -45,6 +45,8 @@ linters:
     - nilnil
     - containedctx
     - wsl # conflicts with gofumpt, and gofumpt is better
+    - gofumpt
+    - goimports 
     - dupword # does not play nice with openapi generator
     - dupl
     - tagliatelle
