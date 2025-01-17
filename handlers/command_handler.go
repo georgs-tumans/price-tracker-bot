@@ -4,14 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"pricetrackerbot/config"
-	"pricetrackerbot/helpers"
-	"pricetrackerbot/utilities"
 	"strconv"
 	"strings"
 	"sync"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"pricetrackerbot/config"
+	"pricetrackerbot/helpers"
+	"pricetrackerbot/utilities"
 )
 
 const (
@@ -96,7 +96,6 @@ func (ch *CommandHandler) HandleCommand(chatId int64, commandString string, call
 		if err := c.Handler(utilities.GetStringPointerValue(trackerCode), chatId, commandParam); err != nil {
 			return err
 		}
-
 	} else {
 		log.Printf("[CommandHandler] Unknown command: %s", command)
 		helpers.SendMessageHTML(ch.bot, chatId, "Unrecognized command", nil)
@@ -146,11 +145,11 @@ func (ch *CommandHandler) HandleUserInput(chatId int64, userInput string, callba
 	return nil
 }
 
-// TODO: implement interval setting here
+// TODO: implement interval setting here.
 func (ch *CommandHandler) handleStart(code string, chatId int64, commandParam *string) error {
 	// Start all trackers
 	if code == "" {
-		var errors map[string]error = make(map[string]error)
+		errors := make(map[string]error)
 
 		for _, tracker := range ch.config.APITrackers {
 			if tr := ch.GetActiveTracker(tracker.Code); tr == nil {
@@ -300,7 +299,7 @@ func (ch *CommandHandler) handleSetInterval(code string, chatId int64, commandPa
 func (ch *CommandHandler) handleStatus(code string, chatId int64, commandParam *string) error {
 	// Handle the case when the user wants to see the status of all trackers
 	if code == "" {
-		var statusMenu = helpers.GetStatusInlineKeyboard()
+		statusMenu := helpers.GetStatusInlineKeyboard()
 
 		var builder strings.Builder
 		builder.WriteString("<b>All available trackers</b>\n\n")
@@ -325,7 +324,7 @@ func (ch *CommandHandler) handleStatus(code string, chatId int64, commandParam *
 		return nil
 	}
 
-	var statusMenu = tgbotapi.NewInlineKeyboardMarkup()
+	statusMenu := tgbotapi.NewInlineKeyboardMarkup()
 
 	tracker := ch.GetActiveTracker(code)
 	if tracker == nil {

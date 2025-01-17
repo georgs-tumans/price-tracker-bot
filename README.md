@@ -85,13 +85,12 @@ You cannot run the bot in the long polling mode while there are actively registe
 
 ### Linting
 
-A golangci-lint configuration file is included, use 
+A golangci-lint configuration file is included, some useful commands to run in git bash:
 
-```bash 
-golangci-lint run --out-format json > lint-results.json
-``` 
 
-in git bash to lint manually or switch the default linter to golangci in you editor settings.
+ - Export lint result to a file: `golangci-lint run --out-format json > lint-results.json`
+ - Run lint and fix issues where possible: `golangci-lint run --fix`
+
 
 ## Deployment
 

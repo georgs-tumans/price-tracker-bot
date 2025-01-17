@@ -4,14 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	config "pricetrackerbot/config"
-	"pricetrackerbot/services"
 	"strconv"
 
 	"github.com/tidwall/gjson"
+	config "pricetrackerbot/config"
+	"pricetrackerbot/services"
 )
 
-// Client for fetching data from public APIs and extracting the necessary data as defined in the tracker configuration
+// Client for fetching data from public APIs and extracting the necessary data as defined in the tracker configuration.
 type PublicAPIClient struct {
 	trackerData *config.Tracker
 }

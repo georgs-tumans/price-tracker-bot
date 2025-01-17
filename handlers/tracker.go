@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"pricetrackerbot/config"
-	"pricetrackerbot/helpers"
-	"pricetrackerbot/utilities"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"pricetrackerbot/config"
+	"pricetrackerbot/helpers"
+	"pricetrackerbot/utilities"
 )
 
 const (
@@ -86,6 +86,7 @@ func CreateTracker(bot *tgbotapi.BotAPI, code string, runInterval time.Duration,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+
 	return &Tracker{
 		Code:        code,
 		Ticker:      time.NewTicker(runIntervalToUse),

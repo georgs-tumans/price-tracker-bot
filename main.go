@@ -3,8 +3,9 @@ package main
 import (
 	"fmt"
 	"log"
-	"pricetrackerbot/botfixer"
 	"strings"
+
+	"pricetrackerbot/botfixer"
 )
 
 func main() {

@@ -17,5 +17,4 @@ func CompareNumbers(givenValue float64, targetValue float64, operator string) (b
 	default:
 		return false, errors.New("invalid operator")
 	}
-
 }

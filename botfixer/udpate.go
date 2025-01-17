@@ -11,7 +11,6 @@ import (
 )
 
 func (b *BotFixer) webhookHandler(w http.ResponseWriter, r *http.Request) {
-
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		log.Printf("[Bot fixer] Error reading request body: %v", err)
@@ -76,7 +75,7 @@ func (b *BotFixer) handleMessage(message *tgbotapi.Message) {
 	if message.IsCommand() {
 		b.CommandHandler.GetUserNavigationState(message.Chat.ID).BackButtonEnabled = false
 		if err := b.CommandHandler.HandleCommand(message.Chat.ID, text, nil, false); err != nil {
-			log.Printf("[Bot fixer] An error occured while handling command: %s", err.Error())
+			log.Printf("[Bot fixer] An error occurred while handling command: %s", err.Error())
 
 			return
 		}
@@ -88,7 +87,7 @@ func (b *BotFixer) handleMessage(message *tgbotapi.Message) {
 	if b.CommandHandler.AwaitingUserInput {
 		b.CommandHandler.GetUserNavigationState(message.Chat.ID).BackButtonEnabled = true
 		if err := b.CommandHandler.HandleUserInput(message.Chat.ID, text, nil); err != nil {
-			log.Printf("[Bot fixer] An error occured while handling user input: %s", err.Error())
+			log.Printf("[Bot fixer] An error occurred while handling user input: %s", err.Error())
 
 			return
 		}
@@ -103,7 +102,7 @@ func (b *BotFixer) handleButton(query *tgbotapi.CallbackQuery) {
 
 	if command == "back" {
 		if err := b.CommandHandler.HandleReturn(query.Message.Chat.ID, &query.Message.MessageID); err != nil {
-			log.Printf("[Bot fixer] An error occured while handling button: %s", err.Error())
+			log.Printf("[Bot fixer] An error occurred while handling button: %s", err.Error())
 
 			return
 		}
@@ -112,7 +111,7 @@ func (b *BotFixer) handleButton(query *tgbotapi.CallbackQuery) {
 	}
 
 	if err := b.CommandHandler.HandleCommand(query.Message.Chat.ID, command, &query.Message.MessageID, false); err != nil {
-		log.Printf("[Bot fixer] An error occured while handling button: %s", err.Error())
+		log.Printf("[Bot fixer] An error occurred while handling button: %s", err.Error())
 
 		return
 	}

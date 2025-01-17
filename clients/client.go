@@ -3,10 +3,11 @@ package clients
 import (
 	"fmt"
 	"log"
-	config "pricetrackerbot/config"
-	"pricetrackerbot/helpers"
 	"strconv"
 	"strings"
+
+	config "pricetrackerbot/config"
+	"pricetrackerbot/helpers"
 )
 
 type DataResult struct {
@@ -14,7 +15,7 @@ type DataResult struct {
 	NotificationMessage string
 }
 
-// Common client interface that will be implemented by the concrete types of clients
+// Common client interface that will be implemented by the concrete types of clients.
 type Client interface {
 	FetchAndExtractData(trackerCode string) (*DataResult, error)
 }

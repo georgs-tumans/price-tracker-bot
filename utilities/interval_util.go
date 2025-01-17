@@ -28,6 +28,7 @@ func ParseDurationWithDays(s string) (time.Duration, error) {
 		if err != nil {
 			return 0, err
 		}
+
 		return days * 24, nil
 	}
 
@@ -43,9 +44,9 @@ func DurationToString(d time.Duration) string {
 		return fmt.Sprintf("%dh %dm %ds", hours, minutes, seconds)
 	} else if minutes > 0 {
 		return fmt.Sprintf("%dm %ds", minutes, seconds)
-	} else {
-		return fmt.Sprintf("%ds", seconds)
 	}
+
+	return fmt.Sprintf("%ds", seconds)
 }
 
 func extractLetter(s string) string {

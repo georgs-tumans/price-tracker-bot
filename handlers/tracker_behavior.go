@@ -2,11 +2,11 @@ package handlers
 
 import (
 	"fmt"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"pricetrackerbot/clients"
 	"pricetrackerbot/config"
 	"pricetrackerbot/helpers"
-
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 /*

@@ -15,6 +15,7 @@ func GetReturnButtonMenu(existingMenu *tgbotapi.InlineKeyboardMarkup) *tgbotapi.
 		backButtonMenu := tgbotapi.NewInlineKeyboardMarkup(
 			backButtonRow,
 		)
+
 		return &backButtonMenu
 	}
 }

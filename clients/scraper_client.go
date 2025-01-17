@@ -4,15 +4,15 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	config "pricetrackerbot/config"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/gocolly/colly/v2"
+	config "pricetrackerbot/config"
 )
 
-// Client for fetching data from website HTML's and extracting the necessary data as defined in the tracker configuration
+// Client for fetching data from website HTML's and extracting the necessary data as defined in the tracker configuration.
 type ScraperClient struct {
 	trackerData *config.Tracker
 	collector   *colly.Collector
@@ -56,7 +56,7 @@ func (c *ScraperClient) FetchAndExtractData(trackerData *config.Tracker) (*DataR
 	priceFloat, err := strconv.ParseFloat(cleanPrice, 64)
 	if err != nil {
 		log.Printf("[Scraper Client] Failed to parse scraped value for tracker %s: %s", trackerData.Code, err.Error())
-		return nil, fmt.Errorf("failed to parse price: %v", err)
+		return nil, fmt.Errorf("failed to parse price: %w", err)
 	}
 
 	notification, err := ProcessNotificationCriteria(c.trackerData, priceFloat)

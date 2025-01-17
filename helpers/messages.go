@@ -13,7 +13,6 @@ func SendMessageHTML(bot *tgbotapi.BotAPI, chatId int64, text string, entities [
 	}
 	msg.ParseMode = tgbotapi.ModeHTML
 	_, err := bot.Send(msg)
-
 	if err != nil {
 		log.Printf("[Bot fixer] Error sending a message: %s", err.Error())
 	}
@@ -31,7 +30,6 @@ func SendMessageHTMLWithMenu(bot *tgbotapi.BotAPI, chatId int64, text string, en
 	msg.ReplyMarkup = menu
 
 	_, err := bot.Send(msg)
-
 	if err != nil {
 		log.Printf("[Bot fixer] Error sending a message: %s", err.Error())
 	}
@@ -61,7 +59,6 @@ func SendMessageHTMLWithKeyboard(bot *tgbotapi.BotAPI, chatId int64, text string
 	msg.ReplyMarkup = keyboard
 
 	_, err := bot.Send(msg)
-
 	if err != nil {
 		log.Printf("[Bot fixer] Error sending a message: %s", err.Error())
 	}
@@ -76,7 +73,6 @@ func SendMessageRemoveKeyboard(bot *tgbotapi.BotAPI, chatId int64) {
 	msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
 
 	sentMsg, err := bot.Send(msg)
-
 	if err != nil {
 		log.Printf("[Bot fixer] Error sending a remove keyboard message: %s", err.Error())
 		return

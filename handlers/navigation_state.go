@@ -25,6 +25,7 @@ func (ns *NavigationState) Peek() *Command {
 	if len(ns.navigationStack) == 0 {
 		return nil
 	}
+
 	return ns.navigationStack[len(ns.navigationStack)-1]
 }
 

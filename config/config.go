@@ -76,7 +76,7 @@ func GetConfig() *Configuration {
 
 		config.ValidateConfig()
 
-		//For debugging purposes
+		// For debugging purposes
 		// configJSON, err := json.MarshalIndent(config, "", "  ")
 		// if err != nil {
 		// 	log.Fatalf("[GetConfig] Error serializing configuration to JSON: %v", err)
@@ -100,6 +100,7 @@ func loadTrackers(fileVar string) ([]*Tracker, error) {
 		if err := json.Unmarshal(data, &trackers); err != nil {
 			return nil, errors.New("failed to parse JSON from file")
 		}
+
 		return trackers, nil
 	}
 
