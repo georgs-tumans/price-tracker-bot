@@ -253,20 +253,13 @@ func (ch *CommandHandler) StopAllTrackers() {
 func (ch *CommandHandler) handleSetInterval(code string, chatId int64, commandParam *string) error {
 	// Means command was initiated from a menu with a button
 	if ch.GetUserNavigationState(chatId).CallbackMessageID != nil {
-		customKeyboard := tgbotapi.NewOneTimeReplyKeyboard(
-			tgbotapi.NewKeyboardButtonRow(
-				tgbotapi.NewKeyboardButton("10m"),
-				tgbotapi.NewKeyboardButton("1h"),
-				tgbotapi.NewKeyboardButton("1d"),
-			),
-		)
-
 		ch.CustomKeyboardActive = true
+
 		helpers.SendMessageHTMLWithKeyboard(
 			ch.bot,
 			chatId, "Send me the new interval value!\n\nThe format: <i>[number][interval type*]</i>\n\nAvailable interval types: \n'm'(minute), 'h'(hour), 'd'(day)",
 			nil,
-			customKeyboard,
+			helpers.GetIntervalCustomMenu(),
 		)
 		ch.AwaitingUserInput = true
 
@@ -307,24 +300,17 @@ func (ch *CommandHandler) handleSetInterval(code string, chatId int64, commandPa
 func (ch *CommandHandler) handleStatus(code string, chatId int64, commandParam *string) error {
 	// Handle the case when the user wants to see the status of all trackers
 	if code == "" {
-		var statusMenu = tgbotapi.NewInlineKeyboardMarkup(
-			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("Run all trackers", "/run"),
-			),
-			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("Stop all trackers", "/stop"),
-			),
-		)
+		var statusMenu = helpers.GetStatusInlineKeyboard()
 
 		var builder strings.Builder
 		builder.WriteString("<b>All available trackers</b>\n\n")
 		for _, tracker := range ch.config.APITrackers {
-			activeStatus := ch.processTrackerStatus(tracker, &statusMenu)
+			activeStatus := ch.processTrackerStatus(tracker, statusMenu)
 			builder.WriteString(fmt.Sprintf(" - %s | %s | api\n", tracker.Code, activeStatus))
 		}
 
 		for _, tracker := range ch.config.ScraperTrackers {
-			activeStatus := ch.processTrackerStatus(tracker, &statusMenu)
+			activeStatus := ch.processTrackerStatus(tracker, statusMenu)
 			builder.WriteString(fmt.Sprintf(" - %s | %s | scraper\n", tracker.Code, activeStatus))
 		}
 
@@ -493,34 +479,22 @@ func (ch *CommandHandler) processTrackerStatus(tracker *config.Tracker, menu *tg
 
 func (ch *CommandHandler) handleCommandMessage(chatId int64, message string, menu *tgbotapi.InlineKeyboardMarkup) {
 	if ch.GetUserNavigationState(chatId).BackButtonEnabled {
-		backButtonRow := tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(" << Return", "back"),
-		)
-
-		// If the message being sent already has a menu, attach the back button to it otherwise create a new menu with the back button.
-		if menu != nil {
-			menu.InlineKeyboard = append(menu.InlineKeyboard, backButtonRow)
-		} else {
-			backButtonMenu := tgbotapi.NewInlineKeyboardMarkup(
-				backButtonRow,
-			)
-			menu = &backButtonMenu
-		}
+		menu = helpers.GetReturnButtonMenu(menu)
 
 		// If the message was sent as a result of a button click, edit the existing message instead of sending a new one.
 		callbackMessageID := ch.GetUserNavigationState(chatId).CallbackMessageID
 		if callbackMessageID == nil {
-			helpers.SendMessageHTMLWithMenu(ch.bot, chatId, message, nil, *menu)
+			helpers.SendMessageHTMLWithMenu(ch.bot, chatId, message, nil, menu)
 			return
 		}
 
-		helpers.EditMessageWithMenu(ch.bot, chatId, *callbackMessageID, message, *menu)
+		helpers.EditMessageWithMenu(ch.bot, chatId, *callbackMessageID, message, menu)
 
 		return
 	}
 
 	if menu != nil {
-		helpers.SendMessageHTMLWithMenu(ch.bot, chatId, message, nil, *menu)
+		helpers.SendMessageHTMLWithMenu(ch.bot, chatId, message, nil, menu)
 		return
 	}
 
