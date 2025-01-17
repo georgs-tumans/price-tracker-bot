@@ -26,3 +26,4 @@ go.work.sum
 ngrok.yml
 tracker_configs/scraper_trackers.json
 tracker_configs/api_trackers.json
+lint-results.json

@@ -83,6 +83,16 @@ However, if you need to run the bot in a container or host it somewhere, it is r
 **NB**:
 You cannot run the bot in the long polling mode while there are actively registered webhooks for the same bot API key!
 
+### Linting
+
+A golangci-lint configuration file is included, use 
+
+```bash 
+golangci-lint run --out-format json > lint-results.json
+``` 
+
+in git bash to lint manually or switch the default linter to golangci in you editor settings.
+
 ## Deployment
 
 ~~The bot is currently hosted on Google Apps; pushing to `master` triggers a build.~~

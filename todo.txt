@@ -5,7 +5,6 @@
 - pamēģināt entities messagiem
 
 Rindas kārtība:
-- menu izveides koda iznešana uz ui helperi (?)
 - ierobežojums uz trackinga regularitāti (?)
 - readme - par konfigurāciju
 - derētu pie paziņojumā norādītās summas pielikt atbilstošu valūtas simbolu

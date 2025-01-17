@@ -1,0 +1,50 @@
+issues:
+  exclude-files:
+    - ".*_test\\.go$"
+  exclude:
+    - "the type name `ErrorResponse` should conform to the `XxxError` format"
+
+linters-settings:
+  gci:
+    custom-order: true
+    sections:
+      - standard
+      - default
+  nlreturn:
+    block-size: 2
+  misspell:
+    ignore-words:
+      - tiem # dublikātiem "misspelled" "time" as "tiem"
+
+linters:
+  presets:
+    - comment
+    - format
+    - bugs
+    - performance
+    - unused
+    - test
+    - sql
+    - style
+
+  disable:
+    - godox
+    - tagalign
+    - exhaustive
+    - exhaustruct
+    - depguard
+    - wrapcheck
+    - gochecknoinits
+    - varnamelen
+    - funlen
+    - ireturn
+    - interfacebloat
+    - gochecknoglobals
+    - err113
+    - lll
+    - nilnil
+    - containedctx
+    - wsl # conflicts with gofumpt, and gofumpt is better
+    - dupword # does not play nice with openapi generator
+    - dupl
+    - tagliatelle
