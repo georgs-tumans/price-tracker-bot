@@ -1,5 +1,8 @@
 # Price Tracker Telegram Bot
 
+[![CodeQL Advanced](https://github.com/georgs-tumans/price-tracker-bot/actions/workflows/codeql.yml/badge.svg)](https://github.com/georgs-tumans/price-tracker-bot/actions/workflows/codeql.yml)
+[![DevSkim](https://github.com/georgs-tumans/price-tracker-bot/actions/workflows/devskim.yml/badge.svg)](https://github.com/georgs-tumans/price-tracker-bot/actions/workflows/devskim.yml)
+
 ## About
 
 A Telegram bot that can track prices of things and notify users upon these prices reaching certain criteria.
