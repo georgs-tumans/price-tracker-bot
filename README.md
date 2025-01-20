@@ -3,6 +3,8 @@
 [![CodeQL Advanced](https://github.com/georgs-tumans/price-tracker-bot/actions/workflows/codeql.yml/badge.svg)](https://github.com/georgs-tumans/price-tracker-bot/actions/workflows/codeql.yml)
 [![DevSkim](https://github.com/georgs-tumans/price-tracker-bot/actions/workflows/devskim.yml/badge.svg)](https://github.com/georgs-tumans/price-tracker-bot/actions/workflows/devskim.yml)
 [![trivy](https://github.com/georgs-tumans/price-tracker-bot/actions/workflows/trivy.yml/badge.svg)](https://github.com/georgs-tumans/price-tracker-bot/actions/workflows/trivy.yml)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=georgs-tumans_price-tracker-bot&metric=alert_status)](https://sonarcloud.io/dashboard?id=georgs-tumans_price-tracker-bot)
+
 
 ## About
 
