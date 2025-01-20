@@ -2,6 +2,7 @@
 
 [![CodeQL Advanced](https://github.com/georgs-tumans/price-tracker-bot/actions/workflows/codeql.yml/badge.svg)](https://github.com/georgs-tumans/price-tracker-bot/actions/workflows/codeql.yml)
 [![DevSkim](https://github.com/georgs-tumans/price-tracker-bot/actions/workflows/devskim.yml/badge.svg)](https://github.com/georgs-tumans/price-tracker-bot/actions/workflows/devskim.yml)
+[![trivy](https://github.com/georgs-tumans/price-tracker-bot/actions/workflows/trivy.yml/badge.svg)](https://github.com/georgs-tumans/price-tracker-bot/actions/workflows/trivy.yml)
 
 ## About
 
