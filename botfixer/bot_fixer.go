@@ -12,6 +12,8 @@ import (
 	"pricetrackerbot/services"
 )
 
+const webhookEndpoint = "/webhook"
+
 type BotFixer struct {
 	Bot               *tgbotapi.BotAPI
 	Config            *config.Configuration
@@ -64,7 +66,7 @@ func (b *BotFixer) InitializeBotWebhook() {
 	// Set this to true to log all interactions with telegram servers
 	b.Bot.Debug = false
 
-	wh, err := tgbotapi.NewWebhook(b.Config.WebhookURL + "/webhook")
+	wh, err := tgbotapi.NewWebhook(b.Config.WebhookURL + webhookEndpoint)
 	if err != nil {
 		log.Fatalf("[Bot fixer] Error creating webhook: %v", err)
 	}
@@ -74,9 +76,9 @@ func (b *BotFixer) InitializeBotWebhook() {
 		log.Fatalf("[Bot fixer] Error setting webhook: %v", err)
 	}
 
-	log.Printf("[Bot fixer] Webhook set: %s", b.Config.WebhookURL+"/webhook")
+	log.Printf("[Bot fixer] Webhook set: %s", b.Config.WebhookURL+webhookEndpoint)
 
-	http.HandleFunc("/webhook", b.webhookHandler)
+	http.HandleFunc(webhookEndpoint, b.webhookHandler)
 
 	log.Println("[Bot fixer] Starting server on port " + b.Config.Port)
 	log.Println("[Bot fixer] Bot initialized via the webhook approach; listening for updates")

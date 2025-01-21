@@ -32,10 +32,7 @@ type TrackerExecutionError struct {
 	Timestamp time.Time
 }
 
-// Tracker represents a single URL that the bot will track - either through an API or by scraping a website
-/* TODO
-   - think about reusing one struct for Config and here
-*/
+// Tracker represents a single URL that the bot will track - either through an API or by scraping a website.
 type Tracker struct {
 	Code        string
 	Ticker      *time.Ticker
@@ -50,10 +47,6 @@ type Tracker struct {
 	errorLimit  int
 }
 
-/*
-TODO
-  - add code uniqueness check (whether the tracker with the same code already exists)
-*/
 func CreateTracker(bot *tgbotapi.BotAPI, code string, runInterval time.Duration, config *config.Configuration, chatID int64) (*Tracker, error) {
 	var behavior TrackerBehavior
 	trackerType := DetermineTrackerType(code, config)
