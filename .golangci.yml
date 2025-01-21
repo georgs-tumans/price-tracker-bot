@@ -40,7 +40,6 @@ linters:
     - ireturn
     - interfacebloat
     - gochecknoglobals
-    - err113
     - lll
     - nilnil
     - containedctx
