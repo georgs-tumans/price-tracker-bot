@@ -8,10 +8,11 @@ import (
 	"strings"
 	"sync"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"pricetrackerbot/config"
 	"pricetrackerbot/helpers"
 	"pricetrackerbot/utilities"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 const (
@@ -145,47 +146,50 @@ func (ch *CommandHandler) HandleUserInput(chatID int64, userInput string, callba
 	return nil
 }
 
+func (ch *CommandHandler) startAllTrackers(chatID int64) {
+	errors := make(map[string]error)
+
+	for _, tracker := range ch.config.APITrackers {
+		if tr := ch.GetActiveTracker(tracker.Code); tr == nil {
+			if newTracker, err := CreateTracker(ch.bot, tracker.Code, 0, ch.config, chatID); err != nil {
+				errors[tracker.Code] = err
+			} else {
+				ch.AddRunningTracker(newTracker)
+				newTracker.Start()
+				log.Printf("[CommandHandler] Starting tracker: %s", newTracker.Code)
+			}
+		}
+	}
+
+	for _, tracker := range ch.config.ScraperTrackers {
+		if tr := ch.GetActiveTracker(tracker.Code); tr == nil {
+			if newTracker, err := CreateTracker(ch.bot, tracker.Code, 0, ch.config, chatID); err != nil {
+				errors[tracker.Code] = err
+			} else {
+				ch.AddRunningTracker(newTracker)
+				newTracker.Start()
+				log.Printf("[CommandHandler] Starting tracker: %s", newTracker.Code)
+			}
+		}
+	}
+
+	if len(errors) > 0 {
+		var builder strings.Builder
+		builder.WriteString("Failed to start the following trackers:\n")
+		for code, err := range errors {
+			builder.WriteString(fmt.Sprintf(" - %s: %s\n", code, err.Error()))
+		}
+
+		ch.handleCommandMessage(chatID, builder.String(), nil)
+	} else {
+		ch.handleCommandMessage(chatID, "All available trackers have been started", nil)
+	}
+}
+
 // TODO: implement interval setting here.
 func (ch *CommandHandler) handleStart(code string, chatID int64, _ *string) error {
-	// Start all trackers
 	if code == "" {
-		errors := make(map[string]error)
-
-		for _, tracker := range ch.config.APITrackers {
-			if tr := ch.GetActiveTracker(tracker.Code); tr == nil {
-				if newTracker, err := CreateTracker(ch.bot, tracker.Code, 0, ch.config, chatID); err != nil {
-					errors[tracker.Code] = err
-				} else {
-					ch.AddRunningTracker(newTracker)
-					newTracker.Start()
-					log.Printf("[CommandHandler] Starting tracker: %s", newTracker.Code)
-				}
-			}
-		}
-
-		for _, tracker := range ch.config.ScraperTrackers {
-			if tr := ch.GetActiveTracker(tracker.Code); tr == nil {
-				if newTracker, err := CreateTracker(ch.bot, tracker.Code, 0, ch.config, chatID); err != nil {
-					errors[tracker.Code] = err
-				} else {
-					ch.AddRunningTracker(newTracker)
-					newTracker.Start()
-					log.Printf("[CommandHandler] Starting tracker: %s", newTracker.Code)
-				}
-			}
-		}
-
-		if len(errors) > 0 {
-			var builder strings.Builder
-			builder.WriteString("Failed to start the following trackers:\n")
-			for code, err := range errors {
-				builder.WriteString(fmt.Sprintf(" - %s: %s\n", code, err.Error()))
-			}
-
-			ch.handleCommandMessage(chatID, builder.String(), nil)
-		} else {
-			ch.handleCommandMessage(chatID, "All available trackers have been started", nil)
-		}
+		ch.startAllTrackers(chatID)
 
 		return nil
 	}
