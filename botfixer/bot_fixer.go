@@ -6,11 +6,10 @@ import (
 	"net/http"
 	"time"
 
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"pricetrackerbot/config"
 	"pricetrackerbot/handlers"
 	"pricetrackerbot/services"
-
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 const webhookEndpoint = "/webhook"
