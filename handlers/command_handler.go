@@ -8,11 +8,10 @@ import (
 	"strings"
 	"sync"
 
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"pricetrackerbot/config"
 	"pricetrackerbot/helpers"
 	"pricetrackerbot/utilities"
-
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 const (
@@ -146,16 +145,14 @@ func (ch *CommandHandler) HandleUserInput(chatID int64, userInput string, callba
 	return nil
 }
 
-func (ch *CommandHandler) startTracker(trackerCode string, chatID int64) error {
+func (ch *CommandHandler) startTracker(trackerCode string, chatID int64, errors map[string]error) {
 	if newTracker, err := CreateTracker(ch.bot, trackerCode, 0, ch.config, chatID); err != nil {
-		return err
+		errors[trackerCode] = err
 	} else {
 		ch.AddRunningTracker(newTracker)
 		newTracker.Start()
 		log.Printf("[CommandHandler] Starting tracker: %s", newTracker.Code)
 	}
-
-	return nil
 }
 
 func (ch *CommandHandler) startAllTrackers(chatID int64) {
@@ -163,17 +160,13 @@ func (ch *CommandHandler) startAllTrackers(chatID int64) {
 
 	for _, tracker := range ch.config.APITrackers {
 		if tr := ch.GetActiveTracker(tracker.Code); tr == nil {
-			if err := ch.startTracker(tracker.Code, chatID); err != nil {
-				errors[tracker.Code] = err
-			}
+			ch.startTracker(tracker.Code, chatID, errors)
 		}
 	}
 
 	for _, tracker := range ch.config.ScraperTrackers {
 		if tr := ch.GetActiveTracker(tracker.Code); tr == nil {
-			if err := ch.startTracker(tracker.Code, chatID); err != nil {
-				errors[tracker.Code] = err
-			}
+			ch.startTracker(tracker.Code, chatID, errors)
 		}
 	}
 
@@ -200,7 +193,8 @@ func (ch *CommandHandler) handleStart(code string, chatID int64, _ *string) erro
 
 	// Start a specific tracker
 	if tracker := ch.GetActiveTracker(code); tracker == nil {
-		if err := ch.startTracker(code, chatID); err != nil {
+		newTracker, err := CreateTracker(ch.bot, code, 0, ch.config, chatID)
+		if err != nil {
 			log.Printf("[CommandHandler] Error creating a new tracker: %s", code)
 			message := "Failed to start the tracker :("
 			if err.Error() == "uncregonzied tracker code" {
@@ -211,8 +205,11 @@ func (ch *CommandHandler) handleStart(code string, chatID int64, _ *string) erro
 
 			return err
 		}
+		ch.AddRunningTracker(newTracker)
+		newTracker.Start()
 
 		ch.handleCommandMessage(chatID, "Tracker '"+code+"' has been started", nil)
+		log.Printf("[CommandHandler] Starting tracker: %s", code)
 	} else {
 		log.Printf("[CommandHandler] Tracker '%s' is already running", code)
 		ch.handleCommandMessage(chatID, "Tracker '"+code+"' is already running", nil)
