@@ -1,14 +1,8 @@
-- host somewhere else
-- regularitātes konfigurācija caur bota saskarni
-- vēlamās procentu likmes konfigurācija caur bota saskarni
-- emojis?
-- pamēģināt entities messagiem
 
 Rindas kārtība:
 - ierobežojums uz trackinga regularitāti (?)
 - readme - par konfigurāciju
 - derētu pie paziņojumā norādītās summas pielikt atbilstošu valūtas simbolu
-- Pieslēgt kādus linterus
 
 
 API request handler:
