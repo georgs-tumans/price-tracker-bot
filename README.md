@@ -52,9 +52,9 @@ In case of local development follow these steps:
 
 1. Create an `.env` file; use this [example](/.env.example) to fill out the values.
 
-2. Use [this](/docker_build_and_run.ps1) included powershell script to build (or rebuild) and run the bot as a Docker container.
+2. Use [this](/deployment/docker_build_and_run.ps1) included powershell script to build (or rebuild) and run the bot as a Docker container.
 
-Afterwards you can use [this other script](/docker_run.ps1) to run the container without rebuilding the image.
+Afterwards you can use [this other script](/deployment/docker_run.ps1) to run the container without rebuilding the image.
 
 Also, you can press `F5` if using VS Code to run via a launch profile or just use the CMD command `go run main.go` in the root of the project.
 
@@ -65,7 +65,7 @@ In other cases, see below.
 
 1. Run ngrok locally - you will need it for exposing localhost to the internet so that Telegram can reach the bot when running locally (during development). 
 
-There is a [powershell script](/docker_run_ngrok.ps1) for hassle free setup of ngrok via Docker but in order to use it:
+There is a [powershell script](/deployment/docker_run_ngrok.ps1) for hassle free setup of ngrok via Docker but in order to use it:
 
 * Create an ngrok configuration file `ngrok.yml` based on this [template](./ngrok.yml.example)
 * Edit the [script](/docker_run_ngrok.ps1) and set the location of the newly created `ngrok.yml`
@@ -100,4 +100,6 @@ A golangci-lint configuration file is included, some useful commands to run in g
 
 ## Deployment
 
-~~The bot is currently hosted on Google Apps; pushing to `master` triggers a build.~~
+Use [this bash script](/deployment/build-and-run-docker.sh) to build and run project as a docker container when using Linux:
+
+Navigate to the /deployment folder and run `./build-and-run-docker.sh`
