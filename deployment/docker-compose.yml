@@ -1,0 +1,7 @@
+services:
+  price_tracker_bot:
+    image: ghcr.io/georgs-tumans/price-tracker-bot/price_tracker_bot:latest
+    env_file: .env
+    ports:
+      - "7080:8080"
+    restart: unless-stopped
