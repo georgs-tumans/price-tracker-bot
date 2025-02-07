@@ -12,7 +12,7 @@ import (
 )
 
 type NotifyCriteria struct {
-	Operator string `json:"operator" validate:"required,oneof==< <= = >= >"`
+	Operator string `json:"operator" validate:"required,oneof='<=' '<' '=' '>=' '>'"`
 	Value    string `json:"value" validate:"required,numeric"`
 }
 
