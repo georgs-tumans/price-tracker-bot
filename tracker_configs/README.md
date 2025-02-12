@@ -12,7 +12,7 @@ File structure for both of these configurations must be as follows:
      "viewUrl":"<string> the website URL to add to the user notification message",
      "interval":"<string> tracker run interval; format: '1h'; available interval types: "m" - minutes, "h" - hours, "d" - days", 
      "notifyCriteria":"<[{"operator": "", value: 0}]> a list with the criteria for sending notifications; available operators: '<'|'<='|'='|'>='|'>'; notification calculation logic: [extracted value <notifyCriteria> notifyValue]",
-     "responsePath":"<[string] the path to the value in the response JSON; format: uses gson query syntax - https://github.com/tidwall/gjson>"
+     "responsePath":"<[string] the path to the value in the response JSON; format: uses gson query syntax for extracting data from api tracker response json - https://github.com/tidwall/gjson>; in case of scraper trackers - uses goquery syntax - https://pkg.go.dev/github.com/PuerkitoBio/goquery"
    }
  ]
  ```
