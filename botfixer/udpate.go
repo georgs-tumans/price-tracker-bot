@@ -31,8 +31,14 @@ func (b *BotFixer) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	// Handle the update
 	b.handleUpdate(update)
 
-	// Respond with a 200 OK status to Telegram
+	// Respond with a 200 OK status to Telegram WITH update_id acknowledgment
+	// This is REQUIRED by Telegram Bot API for webhooks - without it, updates stop after a few days
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":     true,
+		"result": update.UpdateID,
+	})
 }
 
 func (b *BotFixer) longPollingHandler(ctx context.Context, updates tgbotapi.UpdatesChannel) {
