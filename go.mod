@@ -1,11 +1,10 @@
 module pricetrackerbot
 
-go 1.23.2
-
-require github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
+go 1.27
 
 require (
 	github.com/go-playground/validator/v10 v10.23.0
+	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/gocolly/colly/v2 v2.1.0
 	github.com/joho/godotenv v1.5.1
 	github.com/tidwall/gjson v1.18.0
