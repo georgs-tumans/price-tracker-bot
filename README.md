@@ -12,6 +12,20 @@ A Telegram bot that can track prices of things and notify users upon these price
 
 Tracking can be done using publicly available API for Single Page Applications or by scraping website HTML.
 
+## Migration
+
+In September 2026 the bot went through a maintenance round: it now uses long polling instead of webhooks, survives restarts and network drops, runs in a minimal non-root Docker image, and uses up-to-date dependencies, including a new Telegram library. The full description of what changed and why is in **[MIGRATION_PLAN.md](/MIGRATION_PLAN.md)**.
+
+If you're updating an installation from before that, the changes that need your attention are:
+
+- **Configuration:** `WEBHOOK_URL`, `PORT` and `ENVIRONMENT` were removed; delete them from `.env`. `ALLOWED_CHAT_IDS` is new (see [Restricting who can use the bot](#restricting-who-can-use-the-bot)).
+- **Deployment:** use `./deployment/start.sh` and `./deployment/stop.sh` instead of the old `docker run` scripts (see [Deployment](#deployment-linux-server-docker-compose)). The first `start.sh` run replaces the old container.
+- **Local development:** use a separate dev bot so a local copy doesn't take updates away from the server copy (see [Running locally while the server copy is running](#running-locally-while-the-server-copy-is-running)).
+- **Trackers:** start them once with `/run` after the first deploy; from then on they're resumed automatically after every restart.
+- **Webhook infrastructure** (port forward, ngrok, tunnel) is no longer needed.
+
+The step-by-step checklist is in the [to-do section](/MIGRATION_PLAN.md#2-to-do-before-and-after-deploying) of the migration document.
+
 ## Available tools/functionality
 
 ### Available bot commands:
