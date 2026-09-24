@@ -12,7 +12,7 @@ import (
 
 const testPage = `<!DOCTYPE html>
 <html>
-<head><title>Shop</title></head>
+<head><title>Shop</title><meta property="product:price:amount" content="35.29"></head>
 <body>
 	<div class="product">
 		<h1>Laptop</h1>
@@ -79,6 +79,7 @@ func TestScraperClient(t *testing.T) {
 		{selector: "td.cell", want: 12.5},
 		{selector: "ul.offers li:nth-child(2)", want: 20},
 		{selector: "span[data-price]", want: 7.99},
+		{selector: `meta[property="product:price:amount"]`, want: 35.29},
 	}
 
 	for _, tt := range tests {

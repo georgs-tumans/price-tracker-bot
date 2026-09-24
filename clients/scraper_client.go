@@ -31,6 +31,10 @@ func (c *ScraperClient) FetchAndExtractData(trackerData *config.Tracker) (*DataR
 
 	collector.OnHTML(trackerData.DataExtractionPath, func(e *colly.HTMLElement) {
 		price = e.Text
+		// Elements without text such as <meta> tags carry the value in the content attribute
+		if strings.TrimSpace(price) == "" {
+			price = e.Attr("content")
+		}
 	})
 
 	collector.OnError(func(_ *colly.Response, err error) {
