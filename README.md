@@ -19,7 +19,8 @@ In September 2026 the bot went through a maintenance round: it now uses long pol
 If you're updating an installation from before that, the changes that need your attention are:
 
 - **Configuration:** `WEBHOOK_URL`, `PORT` and `ENVIRONMENT` were removed; delete them from `.env`. `ALLOWED_CHAT_IDS` is new (see [Restricting who can use the bot](#restricting-who-can-use-the-bot)).
-- **Deployment:** use `./deployment/start.sh` and `./deployment/stop.sh` instead of the old `docker run` scripts (see [Deployment](#deployment-linux-server-docker-compose)). The first `start.sh` run replaces the old container.
+- **Deployment:** the server now pulls released images from `ghcr.io` instead of building locally. Use `./deployment/update.sh`, `start.sh` and `stop.sh` instead of the old `docker run` scripts (see [Deployment](#deployment-linux-server-docker-compose)). The first run replaces the old container.
+- **Tracker configs** are mounted into the container from `tracker_configs/` on the server instead of being built into the image.
 - **Local development:** use a separate dev bot so a local copy doesn't take updates away from the server copy (see [Running locally while the server copy is running](#running-locally-while-the-server-copy-is-running)).
 - **Trackers:** start them once with `/run` after the first deploy; from then on they're resumed automatically after every restart.
 - **Webhook infrastructure** (port forward, ngrok, tunnel) is no longer needed.
@@ -81,26 +82,58 @@ To find your chat ID, set `ALLOWED_CHAT_IDS` to any placeholder value (e.g. `0`)
 
 ## Deployment (Linux server, Docker Compose)
 
-The bot runs as a Docker Compose service defined in [deployment/docker-compose.yml](/deployment/docker-compose.yml). The container restarts automatically after crashes and server reboots (`restart: unless-stopped`), as long as the Docker service itself starts on boot (`sudo systemctl enable docker`).
+The bot is published as a Docker image on the GitHub Container Registry, `ghcr.io/georgs-tumans/price-tracker-bot`, and runs as a Docker Compose service defined in [deployment/docker-compose.yml](/deployment/docker-compose.yml). The server doesn't build anything: it pulls the released image.
 
-Deploying a new version:
+The container restarts automatically after crashes and server reboots (`restart: unless-stopped`), as long as the Docker service itself starts on boot (`sudo systemctl enable docker`).
+
+### Setting up the server
+
+The server needs a checkout of this repository (for the compose file and scripts), an `.env` file in the project root, and the tracker configuration files in `tracker_configs/`:
 
 ```bash
-git pull
+git clone https://github.com/georgs-tumans/price-tracker-bot.git
+cd price-tracker-bot
+cp .env.example .env            # then fill in the values
+# put api_trackers.json / scraper_trackers.json into tracker_configs/
 ./deployment/start.sh
 ```
 
-[start.sh](/deployment/start.sh) rebuilds the image from the current code and (re)starts the container in the background. [stop.sh](/deployment/stop.sh) stops and removes the container:
+### Scripts
+
+| Script | What it does |
+|---|---|
+| [`./deployment/update.sh`](/deployment/update.sh) | Updates to the latest release: pulls the latest deployment files with `git pull`, pulls the image and recreates the container if the image changed. The bot is only down for a few seconds, and nothing happens if it's already up to date. |
+| [`./deployment/start.sh`](/deployment/start.sh) | Starts the bot in the background (pulls the image first if it isn't on the server yet). |
+| [`./deployment/stop.sh`](/deployment/stop.sh) | Stops and removes the container. The tracker state and the image are kept. |
+
+The scripts can be run from any directory. They print the container status at the end; follow the logs with `docker logs -f price_tracker_bot`. The first line of the log shows the running version, e.g. `Starting bot service (version v1.2.0)`. On their first run, `start.sh` and `update.sh` remove a leftover `price_tracker_bot` container created by the old `docker run` scripts, if there is one.
+
+### Versions and rollback
+
+By default the server runs the `latest` image, which is the newest stable release. To run a specific version, set `IMAGE_TAG` in `.env` (without the `v`) and run `update.sh`:
 
 ```bash
-./deployment/stop.sh
+IMAGE_TAG=1.2.0
 ```
 
-Follow the logs with `docker logs -f price_tracker_bot`.
+Remove the line again to go back to `latest`. Every release is available as `1.2.3` and `1.2` (the newest patch of 1.2).
 
-The tracker state lives in the `bot-data` Docker volume, so it survives rebuilds. `stop.sh` keeps it; `docker compose down -v` would delete it.
+### Tracker configuration
 
-The image is built `FROM scratch`: it contains only the bot binary, the trusted root certificates for HTTPS and the tracker configs. The bot runs as an unprivileged user (UID 65532) with a read-only filesystem; the `/data` volume is the only writable place.
+The tracker configuration files are **not** part of the image: they're private, and the image is public. The compose file mounts the server's `tracker_configs/` directory into the container (read-only). After changing a tracker file, restart the bot with `docker restart price_tracker_bot`.
+
+### Data
+
+The tracker state lives in the `bot-data` Docker volume, so it survives updates. `stop.sh` keeps it; `docker compose down -v` would delete it.
+
+The image is built `FROM scratch`: it contains only the bot binary and the trusted root certificates for HTTPS. The bot runs as an unprivileged user (UID 65532) with a read-only filesystem; the `/data` volume is the only writable place.
+
+### Creating a release
+
+1. Make sure the code you want to release is on `main` (or whichever branch you release from) and CI is green.
+2. On GitHub, go to **Releases → Draft a new release**, create a new tag following [semantic versioning](https://semver.org/) (e.g. `v1.2.0`), add release notes and click **Publish release**.
+3. The [Release image](/.github/workflows/release.yml) workflow builds the image for `linux/amd64` and `linux/arm64`, scans it with Trivy (a release with high or critical vulnerabilities is not published), and pushes it tagged `1.2.0`, `1.2` and `latest`. Pre-releases like `v1.3.0-rc1` don't get the `latest` tag.
+4. On the server, run `./deployment/update.sh`.
 
 ### Troubleshooting (there is no shell in the container)
 
@@ -116,8 +149,6 @@ Because the image is empty apart from the bot, **`docker exec -it price_tracker_
 | Reset the saved trackers | `./deployment/stop.sh`, then `docker volume rm price-tracker-bot_bot-data`, then `./deployment/start.sh` |
 
 If you really need a shell next to the bot, for example to test network access from its point of view, attach a throwaway container to its network namespace: `docker run --rm -it --network container:price_tracker_bot alpine sh`.
-
-The scripts can be run from any directory. The first time `start.sh` runs, it removes a leftover `price_tracker_bot` container created by the old `docker run` scripts, if there is one.
 
 
 ## Development
@@ -136,7 +167,13 @@ The fix is to use a separate bot for development:
 
 Press `F5` in VS Code (launch profile included) or run `go run .` in the project root. Tracker state is saved to `data/state.json` (ignored by git).
 
-To run it in a container locally instead: `docker compose -f deployment/docker-compose.yml up --build`.
+To run it in a container built from your local source instead of a released image, use the local override file (from the `deployment` directory):
+
+```bash
+docker compose --env-file ../.env -f docker-compose.yml -f docker-compose.local.yml up -d --build
+```
+
+Stop it with `./stop.sh`.
 
 ### Linting and tests
 

@@ -2,13 +2,14 @@ name: price-tracker-bot
 
 services:
   price_tracker_bot:
-    build: ..
-    image: price_tracker_bot
+    # Released image; set IMAGE_TAG in .env (e.g. IMAGE_TAG=1.2.0) to run a specific version instead of the latest
+    image: ghcr.io/georgs-tumans/price-tracker-bot:${IMAGE_TAG:-latest}
     container_name: price_tracker_bot
     env_file: ../.env
     restart: unless-stopped
     volumes:
       - bot-data:/data # Running trackers, resumed after restarts
+      - ../tracker_configs:/app/tracker_configs:ro # Tracker configuration files, kept outside the public image
     # Hardening: the only writable place is the /data volume, and the process gets no extra privileges
     read_only: true
     cap_drop:

@@ -40,7 +40,8 @@ All of this is fixed; the few things still open are listed in [section 7](#7-ope
 | Who can use the bot | Anyone on Telegram | Only chats in `ALLOWED_CHAT_IDS` |
 | Telegram library | `go-telegram-bot-api/v5` (2021) | `github.com/go-telegram/bot` v1.27.0 |
 | Docker image | Alpine, running as root, ~30 MB | `scratch`, non-root, read-only, ~16 MB |
-| Deployment | Manual `docker run` scripts | `./deployment/start.sh` / `stop.sh` (Docker Compose) |
+| Deployment | Image built on the server with manual `docker run` scripts | Released images pulled from `ghcr.io`; `./deployment/update.sh` / `start.sh` / `stop.sh` (Docker Compose) |
+| Releases | None | Publishing a GitHub release builds, scans and publishes the image |
 | Known vulnerabilities (Trivy, HIGH+) | 19 | 0 |
 | Tests | None | Unit tests plus end-to-end tests against a fake Telegram server |
 
@@ -61,7 +62,10 @@ These steps can't be done from the code. Do them in order and tick them off.
   ```bash
   go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
   ```
-- [ ] **Review and merge** the `maintenance-plan` branch into `develop`, and into whichever branch the server pulls.
+- [ ] **Review and merge** the `maintenance-plan` branch into `develop`, and into `main` (or whichever branch you release from and the server pulls).
+- [ ] **Publish the first release** (e.g. `v2.0.0`): GitHub → Releases → Draft a new release → new tag → Publish. The server can't pull anything until this exists. Check that the "Release image" workflow succeeds in the Actions tab.
+- [ ] **Make the image public:** after the first release, open the package (your GitHub profile → Packages → `price-tracker-bot` → Package settings), set **Change visibility → Public**, and check that it's linked to this repository. Otherwise the server would need to log in to ghcr.io to pull it.
+- [ ] **Delete the old package** `price-tracker-bot/price_tracker_bot` from January 2025 on the same Packages page, so there's only one image and nobody pulls the outdated one.
 - [ ] *(Optional)* **Look at why the old version died** before replacing it: `docker logs --since 72h price_tracker_bot`, `docker inspect -f '{{.RestartCount}} {{.State.StartedAt}}' price_tracker_bot`, and `curl -s "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"`.
 
 ### On the server
@@ -75,13 +79,14 @@ These steps can't be done from the code. Do them in order and tick them off.
   sudo systemctl enable docker
   docker compose version
   ```
-- [ ] **Deploy:**
+- [ ] **Check the tracker configs are in `tracker_configs/`** in the server's checkout. They're now mounted into the container instead of being built into the image, so the same files keep working.
+- [ ] **Deploy** (the checkout should be on the branch you release from, e.g. `main`):
   ```bash
   git pull
-  ./deployment/start.sh
+  ./deployment/update.sh
   docker logs -f price_tracker_bot
   ```
-  The first run removes the old container created by the old scripts. The log should show `Webhook deleted` and then `Bot initialized via long polling`, with no `Conflict` errors.
+  The first run removes the old container created by the old scripts. The log should show `Starting bot service (version v2.0.0)` (or whichever version you released), `Webhook deleted` and then `Bot initialized via long polling`, with no `Conflict` errors.
 - [ ] **Find your chat ID(s).** With `ALLOWED_CHAT_IDS=0`, send the bot any message. The log shows:
   ```
   [Bot fixer] Ignoring update from chat 123456789 (not in ALLOWED_CHAT_IDS)
@@ -186,11 +191,15 @@ The colly upgrade was checked for behavior changes (robots.txt handling, timeout
 
 ### Docker image and deployment
 
-- **Image:** the bot is built as a static binary and copied into an empty `scratch` image. It contains only the binary, the root certificates needed for HTTPS, and the tracker configs; time zone data is embedded in the binary, so `TZ` still works. Image size went from about 30 MB to about 16 MB. Dependencies are downloaded in a separate cached step, so code-only changes rebuild much faster.
+- **Image:** the bot is built as a static binary and copied into an empty `scratch` image. It contains only the binary and the root certificates needed for HTTPS; time zone data is embedded in the binary, so `TZ` still works. Image size went from about 30 MB to about 16 MB. Dependencies are downloaded in a separate cached step, so code-only changes rebuild much faster. The release version is built into the binary and shown in the first log line.
 - **No shell in the container:** `docker exec … sh` doesn't work. The README's troubleshooting section lists what to use instead.
-- **Deployment:** Docker Compose ([deployment/docker-compose.yml](deployment/docker-compose.yml)) builds the image from the repo, restarts the container automatically, and keeps tracker state in the `bot-data` volume. Two scripts wrap it:
-  - `./deployment/start.sh`: rebuild and (re)start in the background.
+- **Releases:** publishing a GitHub release (tag like `v1.2.0`) runs the [Release image](.github/workflows/release.yml) workflow. It builds the image for `linux/amd64` and `linux/arm64`, scans it with Trivy (high or critical vulnerabilities stop the release), and pushes it to `ghcr.io/georgs-tumans/price-tracker-bot` tagged `1.2.0`, `1.2` and `latest` (pre-releases don't get `latest`).
+- **Public image, private configs:** the image is public so the server can pull it without logging in. The tracker configs are private, so they're no longer built into the image; the compose file mounts the server's `tracker_configs/` directory read-only. The bot token was never in the image (it comes from `.env` at runtime).
+- **Deployment:** Docker Compose ([deployment/docker-compose.yml](deployment/docker-compose.yml)) pulls the released image, restarts the container automatically, and keeps tracker state in the `bot-data` volume. `IMAGE_TAG` in `.env` pins a specific version, e.g. for a rollback. Three scripts wrap it:
+  - `./deployment/update.sh`: `git pull` for the deployment files, pull the newest image, recreate the container if it changed (a few seconds of downtime).
+  - `./deployment/start.sh`: start in the background.
   - `./deployment/stop.sh`: stop and remove the container (the state volume is kept).
+- **Local builds:** `deployment/docker-compose.local.yml` builds the image from the local source instead of pulling a release (see the README).
 - **Removed:** the old `docker run` scripts (bash and PowerShell), the ngrok script and config, and the Hetzner deploy workflow.
 
 ### CI and linting
@@ -227,6 +236,7 @@ Run them with `go test ./...`.
 | `ENVIRONMENT` | **Removed** | It only switched between webhooks and polling. |
 | `ALLOWED_CHAT_IDS` | **New** | Comma-separated chat IDs the bot responds to. If empty, the bot responds to everyone and logs a warning. |
 | `STATE_FILE` | **New** (optional) | Where running trackers are saved. Default `data/state.json`; the Docker image uses `/data/state.json`, so leave it unset there. |
+| `IMAGE_TAG` | **New** (optional) | Docker image version to run, e.g. `1.2.0`. Default `latest`. Read by the compose file, not the bot. |
 | `ERROR_NOTIFY_LIMIT` | Changed | Now must be a valid number of at least 1. |
 | `BOT_API_KEY`, `TZ`, `API_TRACKERS_FILE`, `SCRAPER_TRACKERS_FILE` | Unchanged | |
 
@@ -238,6 +248,7 @@ Run them with `go test ./...`.
 - **Updates are handled one at a time.** Parallel handling (per-chat locks) would only help with many simultaneous users.
 - **`scratch` instead of `alpine` or distroless.** The smallest image, and it matches the setup used at work. The trade-off is no shell for debugging.
 - **No Docker health check.** It would need a heartbeat that the Telegram library can't provide well, and the timeouts already turn a hung connection into a retry.
+- **Releases via GitHub releases and ghcr.io.** The server pulls images instead of building them, so what runs is exactly what CI built and scanned. `latest` is convenient for updates; `IMAGE_TAG` covers rollbacks. The image is built for both amd64 and arm64 so it also runs on e.g. a Raspberry Pi. Automatic updates (e.g. Watchtower) were left out on purpose: updating stays a deliberate `update.sh`.
 - **Non-root container, not rootless Docker.** Running the Docker daemon itself rootless is a host-level setup and wasn't needed.
 - **Stopping a tracker doesn't wait for a run in progress.** The original plan had `Stop()` wait for the tracker to finish, but that could block a command for up to 20 seconds while a scrape finishes. Since the API and scraper clients no longer keep any state between runs, a run that finishes after `Stop()` can't interfere with a restarted tracker; at worst it sends one last notification.
 - **`STATE_FILE` defaults to `data/state.json`** (relative, for local runs) rather than `/data/state.json` as first planned. The Docker image sets `/data/state.json` itself, so both cases work without configuration.
@@ -283,3 +294,6 @@ Then check for known vulnerabilities with `go run golang.org/x/vuln/cmd/govulnch
 | `e8c3786` | To-do list and README troubleshooting section |
 | `c10e4f1` | Dependency updates, scraper and API client tests |
 | `db0945c` | Migration to `github.com/go-telegram/bot`, end-to-end tests |
+| `c21bea4`, `55a5ce8` | This document rewritten as a summary; README Migration section |
+| `8ec954b` | SonarCloud fixes: workflow actions pinned to commit SHAs, `GetConfig` split up |
+| *(not committed yet)* | Release workflow and ghcr.io deployment, `update.sh`, tracker configs mounted instead of baked in |

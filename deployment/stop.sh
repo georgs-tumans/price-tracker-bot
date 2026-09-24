@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Stops and removes the bot container. The image is kept, so start.sh can bring it back quickly.
-set -euo pipefail
+# Stops and removes the bot container. The tracker state volume and the image are kept.
+# shellcheck source=deployment/common.sh
+source "$(dirname "$0")/common.sh"
 
-cd "$(dirname "$0")"
-
-docker compose down
+compose down

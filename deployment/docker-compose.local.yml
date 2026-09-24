@@ -1,0 +1,7 @@
+# Builds the image from the local source instead of pulling a release. Use it together with the main file:
+#   docker compose --env-file ../.env -f docker-compose.yml -f docker-compose.local.yml up -d --build
+services:
+  price_tracker_bot:
+    image: price_tracker_bot:local
+    pull_policy: build
+    build: ..

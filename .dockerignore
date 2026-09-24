@@ -11,3 +11,5 @@ data
 .golangci.yml
 .editorconfig
 todo.txt
+# Mounted at runtime, never baked into the (public) image
+tracker_configs
