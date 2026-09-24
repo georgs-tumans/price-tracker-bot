@@ -59,7 +59,20 @@ The bot does its job but has three kinds of problems. They're listed in the orde
 
 **Not yet verified against real Telegram.** Needs a run with the dev bot (see the checklist in section 7).
 
-Next: Phase 4 (migrate to `github.com/go-telegram/bot`).
+**Phase 4 (done):**
+- [x] `go-telegram-bot-api/v5` replaced with `github.com/go-telegram/bot` v1.27.0; the old library is gone from `go.mod`.
+- [x] New `helpers.Messenger` interface (`SendHTML`, `SendHTMLWithMenu`, `SendHTMLWithKeyboard`, `EditHTMLWithMenu`, `RemoveKeyboard`), implemented by `TelegramMessenger`. Handlers and trackers only depend on the interface. Each call has a 30s timeout. A nil menu is never put into `ReplyMarkup`, because the library would send it as `null`.
+- [x] `botfixer` rewritten around the library's polling loop (`bot.Start`): 60s poll timeout, 90s HTTP client timeout, graceful stop through the context. The hand-written update loop is gone.
+- [x] Errors go through `WithErrorsHandler`. A 409 Conflict is logged as "Another instance is polling with this bot API key; use a separate bot for development" (2.4). The library already removes the token from network errors.
+- [x] Buttons on messages older than 48 hours (which Telegram sends as "inaccessible") still work; they carry the chat and message ID that's needed.
+- [x] Concurrency: the library runs each handler in its own goroutine. Updates are now explicitly handled one at a time (a mutex in `handleUpdate`), the same as before. This is simpler and safer than per-chat locks for a bot with a handful of users. Tracker goroutines are unaffected.
+- [x] `NewCommandHandler` takes the config as a parameter instead of reading the global one, which makes it testable.
+- [x] **End-to-end tests** (`botfixer/bot_fixer_test.go`) run the whole bot against a fake Telegram API server. They cover: startup webhook deletion; `/status` with its inline menu; ignoring a chat that isn't allowed; a button click that starts a tracker (callback answered, message edited, Return button added); the tracker's notification (with no `reply_markup` sent); the saved state file; the interval change with a reply keyboard, typed input, keyboard removal and the saved new interval; Return, including on an empty history; and resuming trackers after a restart, including dropping a tracker that's no longer in the config. A deliberately broken message text makes the test fail, so it does catch regressions.
+- [x] Tests pass with `-race` (3 runs), lint is clean, the image builds and reaches Telegram, and Trivy is clean. The binary grew from 14.1 to 15.9 MB, because the new library has types for the whole current Bot API.
+
+**Not yet verified against real Telegram.** Everything above ran against a fake API server. Test with the dev bot before deploying (manual to-do list).
+
+All planned phases are done. What's left is the manual to-do list and the optional items in section 6.
 
 | Phase | What | Effort | Can ship on its own |
 |---|---|---|---|
@@ -424,7 +437,7 @@ Handlers and trackers then depend on `Messenger` instead of the library type. Th
 | `NewRemoveKeyboard(true)` | `&models.ReplyKeyboardRemove{RemoveKeyboard: true}` |
 | `AnswerCallbackQuery` (added in 2.6) | `b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{CallbackQueryID: q.ID})` |
 
-**Watch out:** handlers run **asynchronously** by default (one goroutine per update). The locking from 2.3 isn't optional after this change. Don't cover it up with `WithNotAsyncHandlers()`. The navigation map is locked, but the fields of a single chat's `NavigationState` are still changed without a lock. That's safe today because updates are handled one at a time. With async handlers, add a per-chat mutex held while an update is handled, so two quick clicks in the same chat can't interleave.
+**Watch out:** handlers run **asynchronously** by default (one goroutine per update). The locking from 2.3 isn't optional after this change. *(Resolved in Phase 4: updates are handled one at a time through a mutex in `handleUpdate`, so a chat's `NavigationState` and multi-step commands like "/run all" can't interleave. Per-chat locks would allow more parallelism, but a bot with a handful of users doesn't need it.)*
 
 ### 5.4 Target `main` / bot setup (sketch)
 

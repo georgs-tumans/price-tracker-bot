@@ -3,7 +3,6 @@ package handlers
 import (
 	"fmt"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"pricetrackerbot/clients"
 	"pricetrackerbot/config"
 	"pricetrackerbot/helpers"
@@ -21,14 +20,14 @@ type TrackerBehavior interface {
 }
 
 type APITrackerBehavior struct {
-	bot    *tgbotapi.BotAPI
-	client *clients.PublicAPIClient
+	messenger helpers.Messenger
+	client    *clients.PublicAPIClient
 }
 
-func NewAPITrackerBehavior(bot *tgbotapi.BotAPI) *APITrackerBehavior {
+func NewAPITrackerBehavior(messenger helpers.Messenger) *APITrackerBehavior {
 	return &APITrackerBehavior{
-		bot:    bot,
-		client: clients.NewPublicAPIClient(),
+		messenger: messenger,
+		client:    clients.NewPublicAPIClient(),
 	}
 }
 
@@ -40,21 +39,21 @@ func (tb *APITrackerBehavior) Execute(trackerData *config.Tracker, chatID int64)
 	}
 
 	if result.NotificationMessage != "" {
-		helpers.SendMessageHTML(tb.bot, chatID, result.NotificationMessage, nil)
+		tb.messenger.SendHTML(chatID, result.NotificationMessage)
 	}
 
 	return fmt.Sprintf("%.2f", result.CurrentValue), nil
 }
 
 type ScraperTrackerBehavior struct {
-	bot    *tgbotapi.BotAPI
-	client *clients.ScraperClient
+	messenger helpers.Messenger
+	client    *clients.ScraperClient
 }
 
-func NewScraperTrackerBehavior(bot *tgbotapi.BotAPI) *ScraperTrackerBehavior {
+func NewScraperTrackerBehavior(messenger helpers.Messenger) *ScraperTrackerBehavior {
 	return &ScraperTrackerBehavior{
-		bot:    bot,
-		client: clients.NewScraperClient(),
+		messenger: messenger,
+		client:    clients.NewScraperClient(),
 	}
 }
 
@@ -66,7 +65,7 @@ func (tb *ScraperTrackerBehavior) Execute(trackerData *config.Tracker, chatID in
 	}
 
 	if result.NotificationMessage != "" {
-		helpers.SendMessageHTML(tb.bot, chatID, result.NotificationMessage, nil)
+		tb.messenger.SendHTML(chatID, result.NotificationMessage)
 	}
 
 	return fmt.Sprintf("%.2f", result.CurrentValue), nil

@@ -2,95 +2,95 @@ package botfixer
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/go-telegram/bot"
 	"pricetrackerbot/config"
 	"pricetrackerbot/handlers"
+	"pricetrackerbot/helpers"
 )
 
 const (
-	// How long Telegram holds a getUpdates request open while waiting for new updates.
-	pollTimeoutSeconds = 60
+	// How long a getUpdates request may take; Telegram is asked to hold it open for one second less.
+	pollTimeout = 60 * time.Second
 	// Extra time on top of the poll timeout before the HTTP client gives up on a request.
-	pollTimeoutMarginSeconds = 30
+	pollTimeoutMargin = 30 * time.Second
 	// Must be longer than the poll timeout, otherwise every idle poll would time out. Without any timeout,
 	// a request on a silently dropped connection would hang forever and the bot would stop receiving updates.
-	httpClientTimeout = (pollTimeoutSeconds + pollTimeoutMarginSeconds) * time.Second
+	httpClientTimeout = pollTimeout + pollTimeoutMargin
 )
 
 type BotFixer struct {
-	Bot            *tgbotapi.BotAPI
+	Bot            *bot.Bot
 	Config         *config.Configuration
 	CommandHandler *handlers.CommandHandler
+
+	// The library runs each update handler in its own goroutine. Updates are handled one at a time,
+	// as before, so commands from different chats can't interleave (e.g. two /run all at once).
+	updateMu sync.Mutex
 }
 
 func NewBotFixer() *BotFixer {
-	botFixer := &BotFixer{
-		Config: config.GetConfig(),
-	}
-
-	var err error
-	botFixer.Bot, err = tgbotapi.NewBotAPIWithClient(botFixer.Config.BotAPIKey, tgbotapi.APIEndpoint, &http.Client{Timeout: httpClientTimeout})
+	botFixer, err := newBotFixer(config.GetConfig())
 	if err != nil {
 		log.Panic(err)
-		return nil
 	}
-
-	botFixer.CommandHandler = handlers.NewCommandHandler(botFixer.Bot)
 
 	return botFixer
 }
 
+// newBotFixer creates the bot; extra options let tests point it at a fake Telegram API server.
+func newBotFixer(cfg *config.Configuration, extraOptions ...bot.Option) (*BotFixer, error) {
+	botFixer := &BotFixer{
+		Config: cfg,
+	}
+
+	options := append([]bot.Option{
+		bot.WithDefaultHandler(botFixer.handleUpdate),
+		bot.WithHTTPClient(pollTimeout, &http.Client{Timeout: httpClientTimeout}),
+		bot.WithErrorsHandler(handleBotError),
+	}, extraOptions...)
+
+	var err error
+	botFixer.Bot, err = bot.New(cfg.BotAPIKey, options...)
+	if err != nil {
+		return nil, err
+	}
+
+	botFixer.CommandHandler = handlers.NewCommandHandler(helpers.NewTelegramMessenger(botFixer.Bot), cfg)
+
+	return botFixer, nil
+}
+
 // Run receives updates via long polling until the context is cancelled.
 func (b *BotFixer) Run(ctx context.Context) {
-	// Set this to true to log all interactions with telegram servers
-	b.Bot.Debug = false
-
 	// Telegram rejects getUpdates while a webhook is registered, e.g. one left over from the old webhook mode
-	if err := b.deleteWebhook(); err != nil {
+	if _, err := b.Bot.DeleteWebhook(ctx, &bot.DeleteWebhookParams{}); err != nil {
 		log.Printf("[Bot fixer] Error deleting webhook: %v", err)
+	} else {
+		log.Println("[Bot fixer] Webhook deleted")
 	}
 
 	// Trackers run until they are stopped explicitly, independent of this context
 	b.CommandHandler.ResumeTrackers() //nolint:contextcheck
 
-	u := tgbotapi.NewUpdate(0)
-	u.Timeout = pollTimeoutSeconds
-
-	// `updates` is a golang channel which receives telegram updates. If another instance polls with the same
-	// bot API key, the library logs "Conflict: terminated by other getUpdates request" and keeps retrying.
-	updates := b.Bot.GetUpdatesChan(u)
-
 	log.Println("[Bot fixer] Bot initialized via long polling; listening for updates")
 
-	for {
-		select {
-		case <-ctx.Done():
-			b.Bot.StopReceivingUpdates()
-			log.Println("[Bot fixer] Shutting down")
+	// Blocks until the context is cancelled; failed polls are retried by the library with a growing delay
+	b.Bot.Start(ctx)
 
-			return
-		case update, ok := <-updates:
-			if !ok {
-				return
-			}
-
-			b.handleUpdate(update)
-		}
-	}
+	log.Println("[Bot fixer] Shutting down")
 }
 
-func (b *BotFixer) deleteWebhook() error {
-	// Done through the library so the bot token never ends up in a logged request URL
-	_, err := b.Bot.Request(tgbotapi.DeleteWebhookConfig{})
-	if err != nil {
-		return err
+func handleBotError(err error) {
+	if errors.Is(err, bot.ErrorConflict) {
+		log.Printf("[Bot fixer] Another instance is polling with this bot API key; use a separate bot for development: %v", err)
+		return
 	}
 
-	log.Println("[Bot fixer] Webhook deleted")
-
-	return nil
+	log.Printf("[Bot fixer] Telegram API error: %v", err)
 }

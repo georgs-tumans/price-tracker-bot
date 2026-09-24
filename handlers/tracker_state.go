@@ -11,8 +11,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-
-	"pricetrackerbot/helpers"
 )
 
 const (
@@ -110,7 +108,7 @@ func (ch *CommandHandler) ResumeTrackers() {
 			continue
 		}
 
-		tracker, err := CreateTracker(ch.bot, s.Code, interval, ch.config, s.ChatID)
+		tracker, err := CreateTracker(ch.messenger, s.Code, interval, ch.config, s.ChatID)
 		if err != nil {
 			log.Printf("[State] Not resuming tracker '%s': %s", s.Code, err)
 			continue
@@ -128,6 +126,6 @@ func (ch *CommandHandler) ResumeTrackers() {
 	for chatID, codes := range resumedPerChat {
 		slices.Sort(codes)
 		message := fmt.Sprintf("The bot was restarted; resumed %d tracker(s): <b>%s</b>", len(codes), strings.Join(codes, ", "))
-		helpers.SendMessageHTML(ch.bot, chatID, message, nil)
+		ch.messenger.SendHTML(chatID, message)
 	}
 }

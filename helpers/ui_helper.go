@@ -1,11 +1,14 @@
 package helpers
 
-import tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+import "github.com/go-telegram/bot/models"
 
-func GetReturnButtonMenu(existingMenu *tgbotapi.InlineKeyboardMarkup) *tgbotapi.InlineKeyboardMarkup {
-	backButtonRow := tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData(" << Return", "back"),
-	)
+// InlineButton creates an inline keyboard button that sends the given callback data when clicked.
+func InlineButton(text string, callbackData string) models.InlineKeyboardButton {
+	return models.InlineKeyboardButton{Text: text, CallbackData: callbackData}
+}
+
+func GetReturnButtonMenu(existingMenu *models.InlineKeyboardMarkup) *models.InlineKeyboardMarkup {
+	backButtonRow := []models.InlineKeyboardButton{InlineButton(" << Return", "back")}
 
 	// If the message being sent already has a menu, attach the back button to it otherwise create a new menu with the back button.
 	if existingMenu != nil {
@@ -13,34 +16,24 @@ func GetReturnButtonMenu(existingMenu *tgbotapi.InlineKeyboardMarkup) *tgbotapi.
 		return existingMenu
 	}
 
-	backButtonMenu := tgbotapi.NewInlineKeyboardMarkup(
-		backButtonRow,
-	)
-
-	return &backButtonMenu
+	return &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{backButtonRow}}
 }
 
-func GetIntervalCustomMenu() *tgbotapi.ReplyKeyboardMarkup {
-	customKeyboard := tgbotapi.NewOneTimeReplyKeyboard(
-		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton("10m"),
-			tgbotapi.NewKeyboardButton("1h"),
-			tgbotapi.NewKeyboardButton("1d"),
-		),
-	)
-
-	return &customKeyboard
+func GetIntervalCustomMenu() *models.ReplyKeyboardMarkup {
+	return &models.ReplyKeyboardMarkup{
+		Keyboard: [][]models.KeyboardButton{
+			{{Text: "10m"}, {Text: "1h"}, {Text: "1d"}},
+		},
+		OneTimeKeyboard: true,
+		ResizeKeyboard:  true,
+	}
 }
 
-func GetStatusInlineKeyboard() *tgbotapi.InlineKeyboardMarkup {
-	statusMenu := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("Run all trackers", "/run"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("Stop all trackers", "/stop"),
-		),
-	)
-
-	return &statusMenu
+func GetStatusInlineKeyboard() *models.InlineKeyboardMarkup {
+	return &models.InlineKeyboardMarkup{
+		InlineKeyboard: [][]models.InlineKeyboardButton{
+			{InlineButton("Run all trackers", "/run")},
+			{InlineButton("Stop all trackers", "/stop")},
+		},
+	}
 }

@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"pricetrackerbot/config"
 	"pricetrackerbot/helpers"
 	"pricetrackerbot/utilities"
@@ -46,7 +45,7 @@ type Tracker struct {
 	Behavior    TrackerBehavior
 	trackerData *config.Tracker
 	chatID      int64
-	bot         *tgbotapi.BotAPI
+	messenger   helpers.Messenger
 	errorLimit  int
 
 	// Guards everything below; the tracker goroutine and the command handlers access these concurrently
@@ -55,7 +54,7 @@ type Tracker struct {
 	cancel context.CancelFunc // nil while the tracker is not running
 }
 
-func CreateTracker(bot *tgbotapi.BotAPI, code string, runInterval time.Duration, config *config.Configuration, chatID int64) (*Tracker, error) {
+func CreateTracker(messenger helpers.Messenger, code string, runInterval time.Duration, config *config.Configuration, chatID int64) (*Tracker, error) {
 	var behavior TrackerBehavior
 	trackerType := DetermineTrackerType(code, config)
 	trackerData := config.GetTrackerData(code)
@@ -68,9 +67,9 @@ func CreateTracker(bot *tgbotapi.BotAPI, code string, runInterval time.Duration,
 
 	switch trackerType {
 	case API:
-		behavior = NewAPITrackerBehavior(bot)
+		behavior = NewAPITrackerBehavior(messenger)
 	case Scraper:
-		behavior = NewScraperTrackerBehavior(bot)
+		behavior = NewScraperTrackerBehavior(messenger)
 	default:
 		return nil, fmt.Errorf("unsupported client type for code: %s", code)
 	}
@@ -91,7 +90,7 @@ func CreateTracker(bot *tgbotapi.BotAPI, code string, runInterval time.Duration,
 		trackerData: trackerData,
 		Behavior:    behavior,
 		chatID:      chatID,
-		bot:         bot,
+		messenger:   messenger,
 		errorLimit:  config.ErrorNotifyLimit,
 		status: TrackerStatus{
 			CurrentInterval: runIntervalToUse,
@@ -156,7 +155,7 @@ func (t *Tracker) recordError(err error) {
 
 	if notify {
 		notificationMessage := fmt.Sprintf("Tracker <b>%s</b> has failed %d times in a row, you should probably take a look at the logs :(", t.Code, t.errorLimit)
-		helpers.SendMessageHTML(t.bot, t.chatID, notificationMessage, nil)
+		t.messenger.SendHTML(t.chatID, notificationMessage)
 	}
 }
 
