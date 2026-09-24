@@ -86,7 +86,22 @@ Follow the logs with `docker logs -f price_tracker_bot`.
 
 The tracker state lives in the `bot-data` Docker volume, so it survives rebuilds. `stop.sh` keeps it; `docker compose down -v` would delete it.
 
-The image is built `FROM scratch`: it contains only the bot binary, the trusted root certificates for HTTPS and the tracker configs. The bot runs as an unprivileged user (UID 65532) with a read-only filesystem; the `/data` volume is the only writable place. There is no shell in the container, so use `docker logs` for troubleshooting and `docker cp price_tracker_bot:/data/state.json .` to look at the saved state.
+The image is built `FROM scratch`: it contains only the bot binary, the trusted root certificates for HTTPS and the tracker configs. The bot runs as an unprivileged user (UID 65532) with a read-only filesystem; the `/data` volume is the only writable place.
+
+### Troubleshooting (there is no shell in the container)
+
+Because the image is empty apart from the bot, **`docker exec -it price_tracker_bot sh` does not work**: there is no shell, `ls`, `cat` or any other tool inside. Use these instead:
+
+| To... | Run |
+|---|---|
+| See what the bot is doing | `docker logs -f price_tracker_bot` (add `--since 24h` to limit it) |
+| Check whether it's running, restarts, uptime | `docker ps -a --filter name=price_tracker_bot` and `docker inspect -f '{{.RestartCount}} {{.State.StartedAt}}' price_tracker_bot` |
+| Look at the saved tracker state | `docker cp price_tracker_bot:/data/state.json -` (prints it) or `docker cp price_tracker_bot:/data/state.json .` (copies it out) |
+| Look around the state volume with real tools | `docker run --rm -it -v price-tracker-bot_bot-data:/data alpine sh` (a throwaway Alpine container with the same volume) |
+| Check the environment the bot got | `docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' price_tracker_bot` (prints secrets too, so mind where you paste it) |
+| Reset the saved trackers | `./deployment/stop.sh`, then `docker volume rm price-tracker-bot_bot-data`, then `./deployment/start.sh` |
+
+If you really need a shell next to the bot, for example to test network access from its point of view, attach a throwaway container to its network namespace: `docker run --rm -it --network container:price_tracker_bot alpine sh`.
 
 The scripts can be run from any directory. The first time `start.sh` runs, it removes a leftover `price_tracker_bot` container created by the old `docker run` scripts, if there is one.
 

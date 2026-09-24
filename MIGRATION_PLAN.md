@@ -46,9 +46,7 @@ The bot does its job but has three kinds of problems. They're listed in the orde
 - [x] `.github/workflows/deploy.yml` deleted.
 - [x] README: scratch image notes, lint/test instructions (including running golangci-lint through Docker when the local binary is too old).
 
-**Left for you (repository settings, not code):**
-- Remove the `SERVER_IP`, `SERVER_USER` and `SSH_PRIVATE_KEY` secrets on GitHub.
-- Delete the stale remote branches (`deploy_v4`, `deploy_v5`, `deploy_6`, the two dependabot branches) if you agree.
+**Left for you:** see [Manual to-do](#manual-to-do-for-you) below.
 
 **Expected CI state:** the Trivy workflow will probably fail until Phase 3, because it now scans the Go modules in the binary and `golang.org/x/net` / `x/crypto` are old versions with known HIGH vulnerabilities.
 
@@ -66,6 +64,64 @@ Next: Phase 3 (in-place dependency updates).
 | 5 | Optional cleanup | as desired | yes |
 
 Phase 1 comes first because it's the problem users actually notice, and it doesn't depend on the library migration. Phases 2 and 3 can be done in parallel with it.
+
+---
+
+## Manual to-do (for you)
+
+Things that can't be done from the code, in the order to do them. Tick them off as you go.
+
+### Before the first deploy
+
+- [ ] **Create a dev bot.** In Telegram, message [@BotFather](https://t.me/BotFather), send `/newbot`, and pick a name and username (e.g. `Price Tracker (dev)` / `my_price_tracker_dev_bot`). Put its API key in your **local** `.env` as `BOT_API_KEY`. From now on, the production key only lives in the server's `.env`.
+- [ ] **Test locally with the dev bot** (`go run .` or F5). Go through the local items of the checklist in section 7: every command and button, "<< Return" after restarting the bot, the interval change, and a tracker being resumed after a restart with the "the bot was restarted" message.
+- [ ] **Update your local golangci-lint** so it can lint Go 1.27 code (the installed one was built with Go 1.26):
+  ```bash
+  go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+  ```
+- [ ] **Review and merge** the `maintenance-plan` branch into `develop` (and into `main`, or whichever branch the server pulls).
+- [ ] *(Optional, not blocking)* **Run the Phase 0 checks** on the server before replacing the old container (section 0). This tells you which failure was actually killing the bot.
+
+### On the server
+
+- [ ] **Edit the server's `.env`:**
+  - Delete `WEBHOOK_URL`, `PORT` and `ENVIRONMENT` (also the misspelled `ENVIROMENT`, if it's there). They're no longer used.
+  - Don't set `STATE_FILE`; the image already points it at the `/data` volume.
+  - Add `ALLOWED_CHAT_IDS`. Until you know your chat ID, set it to `0` (see the next step).
+- [ ] **Make sure Docker starts on boot** and the compose plugin is installed:
+  ```bash
+  sudo systemctl enable docker
+  docker compose version
+  ```
+- [ ] **Deploy:**
+  ```bash
+  git pull
+  ./deployment/start.sh
+  docker logs -f price_tracker_bot
+  ```
+  The first run removes the old container created by the old scripts. The log should show `Webhook deleted` and then `Bot initialized via long polling`, with no `Conflict` errors.
+- [ ] **Find your chat ID(s).** With `ALLOWED_CHAT_IDS=0`, send the production bot any message. The log shows:
+  ```
+  [Bot fixer] Ignoring update from chat 123456789 (not in ALLOWED_CHAT_IDS)
+  ```
+  That number is your chat ID. Group chats have negative IDs; message the bot from each chat you want to use. Put the IDs in `.env` (comma separated, e.g. `ALLOWED_CHAT_IDS=123456789,-100987654321`) and run `./deployment/start.sh` again. Do the same with the dev bot for your local `.env` (for a private chat the ID is your Telegram user ID, so it's the same for both bots; group IDs are also the same if both bots are in the group).
+- [ ] **Start the trackers again once** with `/run` (or `/run <code>`). The old version never saved which trackers were running, so there's nothing to resume on the first start. From then on they're resumed automatically.
+- [ ] **Clean up anything that only existed for webhooks:** a port forward to 7080 on your router, an ngrok agent, a Cloudflare tunnel or reverse proxy entry for the bot, a DDNS entry. Polling needs none of them.
+- [ ] **Resilience checks** (section 7): `docker kill price_tracker_bot` (it should come back and resume trackers), reboot the server, unplug the network for a few minutes.
+
+### On GitHub
+
+- [ ] **Remove the Hetzner secrets:** repository Settings → Secrets and variables → Actions → delete `SERVER_IP`, `SERVER_USER`, `SSH_PRIVATE_KEY`.
+- [ ] **Delete the stale branches** (after checking nothing in them is needed), and close any open dependabot PRs:
+  ```bash
+  git push origin --delete deploy_v4 deploy_v5 deploy_6     dependabot/go_modules/golang.org/x/crypto-0.45.0     dependabot/go_modules/golang.org/x/net-0.38.0
+  ```
+  The `copilot/…` and `experiments/…` branches are yours to judge.
+- [ ] **Check the Actions tab** after merging: lint + tests should pass. Trivy should pass once Phase 3 is merged.
+
+### Afterwards
+
+- [ ] **Leave the bot running for a week** before treating "stops working after a couple of days" as fixed. If it does go quiet, `docker logs price_tracker_bot` and `docker inspect price_tracker_bot` are the first things to look at.
 
 ---
 
