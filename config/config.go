@@ -28,7 +28,10 @@ type Tracker struct {
 	DataExtractionPath string           `json:"dataExtractionPath" validate:"required"`
 }
 
-const defaultStateFile = "data/state.json"
+const (
+	defaultStateFile        = "data/state.json"
+	defaultErrorNotifyLimit = 3
+)
 
 type Configuration struct {
 	BotAPIKey        string `validate:"required"`
@@ -42,66 +45,73 @@ type Configuration struct {
 var config *Configuration
 
 func GetConfig() *Configuration {
-	if config == nil {
-		log.Println("[Config] Loading configuration")
-		err := godotenv.Load()
-		if err != nil {
-			log.Println("[GetConfig] No .env file loaded, using environment variables only")
-		}
-
-		config = &Configuration{
-			BotAPIKey: os.Getenv("BOT_API_KEY"),
-			StateFile: os.Getenv("STATE_FILE"),
-		}
-
-		if config.StateFile == "" {
-			config.StateFile = defaultStateFile
-		}
-
-		errorLimit := os.Getenv("ERROR_NOTIFY_LIMIT")
-		if errorLimit != "" {
-			config.ErrorNotifyLimit, err = strconv.Atoi(errorLimit)
-			if err != nil {
-				log.Fatalf("[GetConfig] Error parsing ERROR_NOTIFY_LIMIT: %v", err)
-			}
-		} else {
-			config.ErrorNotifyLimit = 3
-		}
-
-		config.AllowedChatIDs, err = parseChatIDs(os.Getenv("ALLOWED_CHAT_IDS"))
-		if err != nil {
-			log.Fatalf("[GetConfig] Error parsing ALLOWED_CHAT_IDS: %v", err)
-		}
-
-		if len(config.AllowedChatIDs) == 0 {
-			log.Println("[GetConfig] WARNING: ALLOWED_CHAT_IDS is not set; the bot will accept commands from any chat")
-		}
-
-		config.APITrackers, err = loadTrackers("API_TRACKERS_FILE")
-		if err != nil {
-			log.Fatalf("[GetConfig] Error loading API trackers: %v", err)
-		}
-
-		config.ScraperTrackers, err = loadTrackers("SCRAPER_TRACKERS_FILE")
-		if err != nil {
-			log.Fatalf("[GetConfig] Error loading scraper trackers: %v", err)
-		}
-
-		if len(config.APITrackers) == 0 && len(config.ScraperTrackers) == 0 {
-			log.Fatalf("[GetConfig] No trackers defined in the configuration")
-		}
-
-		config.ValidateConfig()
-
-		// For debugging purposes
-		// configJSON, err := json.MarshalIndent(config, "", "  ")
-		// if err != nil {
-		// 	log.Fatalf("[GetConfig] Error serializing configuration to JSON: %v", err)
-		// }
-		// log.Printf("[GetConfig] Loaded configuration: %s\n", configJSON)
+	if config != nil {
+		return config
 	}
 
+	log.Println("[Config] Loading configuration")
+	if err := godotenv.Load(); err != nil {
+		log.Println("[GetConfig] No .env file loaded, using environment variables only")
+	}
+
+	loaded, err := loadConfig()
+	if err != nil {
+		log.Fatalf("[GetConfig] %v", err)
+	}
+
+	if len(loaded.AllowedChatIDs) == 0 {
+		log.Println("[GetConfig] WARNING: ALLOWED_CHAT_IDS is not set; the bot will accept commands from any chat")
+	}
+
+	loaded.ValidateConfig()
+	config = loaded
+
 	return config
+}
+
+// loadConfig builds the configuration from environment variables and the tracker files.
+func loadConfig() (*Configuration, error) {
+	cfg := &Configuration{
+		BotAPIKey: os.Getenv("BOT_API_KEY"),
+		StateFile: os.Getenv("STATE_FILE"),
+	}
+
+	if cfg.StateFile == "" {
+		cfg.StateFile = defaultStateFile
+	}
+
+	var err error
+
+	if cfg.ErrorNotifyLimit, err = parseErrorNotifyLimit(os.Getenv("ERROR_NOTIFY_LIMIT")); err != nil {
+		return nil, fmt.Errorf("error parsing ERROR_NOTIFY_LIMIT: %w", err)
+	}
+
+	if cfg.AllowedChatIDs, err = parseChatIDs(os.Getenv("ALLOWED_CHAT_IDS")); err != nil {
+		return nil, fmt.Errorf("error parsing ALLOWED_CHAT_IDS: %w", err)
+	}
+
+	if cfg.APITrackers, err = loadTrackers("API_TRACKERS_FILE"); err != nil {
+		return nil, fmt.Errorf("error loading API trackers: %w", err)
+	}
+
+	if cfg.ScraperTrackers, err = loadTrackers("SCRAPER_TRACKERS_FILE"); err != nil {
+		return nil, fmt.Errorf("error loading scraper trackers: %w", err)
+	}
+
+	if len(cfg.APITrackers) == 0 && len(cfg.ScraperTrackers) == 0 {
+		return nil, errors.New("no trackers defined in the configuration")
+	}
+
+	return cfg, nil
+}
+
+// Returns the configured error notification limit, or the default of 3 when it's not set.
+func parseErrorNotifyLimit(value string) (int, error) {
+	if value == "" {
+		return defaultErrorNotifyLimit, nil
+	}
+
+	return strconv.Atoi(value)
 }
 
 func loadTrackers(fileVar string) ([]*Tracker, error) {

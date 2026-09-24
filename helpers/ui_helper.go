@@ -3,7 +3,7 @@ package helpers
 import "github.com/go-telegram/bot/models"
 
 // InlineButton creates an inline keyboard button that sends the given callback data when clicked.
-func InlineButton(text string, callbackData string) models.InlineKeyboardButton {
+func InlineButton(text, callbackData string) models.InlineKeyboardButton {
 	return models.InlineKeyboardButton{Text: text, CallbackData: callbackData}
 }
 

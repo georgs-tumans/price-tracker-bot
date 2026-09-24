@@ -1,7 +1,6 @@
 package botfixer
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -184,7 +183,7 @@ func (f *fakeTelegram) waitForCall(description string, match func(apiCall) bool)
 	return apiCall{}
 }
 
-func textContains(method string, substring string) func(apiCall) bool {
+func textContains(method, substring string) func(apiCall) bool {
 	return func(call apiCall) bool {
 		return call.Method == method && strings.Contains(call.Fields["text"], substring)
 	}
@@ -215,7 +214,9 @@ func newTestConfig(t *testing.T, stateFile string) *config.Configuration {
 	}
 }
 
-func startTestBot(t *testing.T, fake *fakeTelegram, cfg *config.Configuration) (*BotFixer, func()) {
+// startTestBot runs the bot until the test ends: t.Context() is cancelled when the test finishes,
+// and the cleanup waits for the bot to stop.
+func startTestBot(t *testing.T, fake *fakeTelegram, cfg *config.Configuration) *BotFixer {
 	t.Helper()
 
 	botFixer, err := newBotFixer(cfg,
@@ -226,28 +227,25 @@ func startTestBot(t *testing.T, fake *fakeTelegram, cfg *config.Configuration) (
 		t.Fatalf("newBotFixer: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 
 	go func() {
 		defer close(done)
-		botFixer.Run(ctx)
+		botFixer.Run(t.Context())
 	}()
 
-	stop := func() {
-		cancel()
+	t.Cleanup(func() {
 		<-done
 		botFixer.CommandHandler.StopAllTrackers()
-	}
+	})
 
-	return botFixer, stop
+	return botFixer
 }
 
 func TestBotEndToEnd(t *testing.T) {
 	fake := newFakeTelegram(t)
 	stateFile := filepath.Join(t.TempDir(), "state.json")
-	_, stop := startTestBot(t, fake, newTestConfig(t, stateFile))
-	defer stop()
+	startTestBot(t, fake, newTestConfig(t, stateFile))
 
 	fake.waitForCall("deleteWebhook at startup", func(c apiCall) bool { return c.Method == "deleteWebhook" })
 
@@ -337,8 +335,7 @@ func TestBotResumesTrackersAfterRestart(t *testing.T) {
 	}
 
 	fake := newFakeTelegram(t)
-	botFixer, stop := startTestBot(t, fake, newTestConfig(t, stateFile))
-	defer stop()
+	botFixer := startTestBot(t, fake, newTestConfig(t, stateFile))
 
 	restarted := fake.waitForCall("restart notice", textContains("sendMessage", "The bot was restarted"))
 	if !strings.Contains(restarted.Fields["text"], "resumed 1 tracker(s): <b>bonds</b>") {
