@@ -44,4 +44,12 @@ jobs:
       - name: Run GolangCI-Lint
         run: |
           golangci-lint run --config=.golangci.yml --timeout=5m
-          golangci-lint fmt --config=.golangci.yml --diff
+
+          format_diff_file=$(mktemp)
+          golangci-lint fmt --config=.golangci.yml --diff > "$format_diff_file"
+
+          if [ -s "$format_diff_file" ]; then
+            cat "$format_diff_file"
+            echo "golangci-lint fmt found formatting drift"
+            exit 1
+          fi
