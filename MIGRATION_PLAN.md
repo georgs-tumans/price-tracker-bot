@@ -48,11 +48,18 @@ The bot does its job but has three kinds of problems. They're listed in the orde
 
 **Left for you:** see [Manual to-do](#manual-to-do-for-you) below.
 
-**Expected CI state:** the Trivy workflow will probably fail until Phase 3, because it now scans the Go modules in the binary and `golang.org/x/net` / `x/crypto` are old versions with known HIGH vulnerabilities.
+**Phase 3 (done):**
+- [x] All dependencies updated: validator 10.30.5, colly 2.3.0 (with goquery 1.13, cascadia 1.3.5, antchfx/*), gjson 1.19.0, `golang.org/x/crypto` 0.57.0, `x/net` 0.59.0, `x/sys` 0.48.0, `x/text` 0.42.0.
+- [x] **Upgrade trap found:** `go get -u ./...` also moved `gobwas/glob` (a colly dependency) to v1.0.0, whose API changed, so colly stopped compiling. Pinned back to v0.2.3, the version colly requires. See the recipe for future updates in section 4.
+- [x] Correction to the original plan: colly 2.3 does **not** drop the old `appengine` / `golang/protobuf` dependencies; they're still there, only newer.
+- [x] colly 2.1 → 2.3 behavior checked in source: same defaults for robots.txt (ignored), timeout (10s) and body limit (10 MB). Only the User-Agent string changed slightly.
+- [x] New tests in `clients/clients_test.go` run the scraper and API client against a local test server (class/id/attribute/`nth-child` selectors, prices like `1 234,56 €` and `€ 7,99`, gjson queries, and error cases). They passed on the old versions first (baseline) and pass unchanged on the new ones. Tests, `-race` and lint are all clean.
+- [x] Security: Trivy (HIGH/CRITICAL, as in CI) found **19 HIGH** in the image from the previous commit and **0** now. `govulncheck`: nothing reachable. The one module-level note is `x/crypto/openpgp`, a deprecated package the bot never imports, with no fix available.
+- Your real tracker configs aren't in the repo, so the test server covers typical cases only. **Check your actual scraper trackers once with the dev bot** (added to the manual to-do list).
 
 **Not yet verified against real Telegram.** Needs a run with the dev bot (see the checklist in section 7).
 
-Next: Phase 3 (in-place dependency updates).
+Next: Phase 4 (migrate to `github.com/go-telegram/bot`).
 
 | Phase | What | Effort | Can ship on its own |
 |---|---|---|---|
@@ -75,6 +82,7 @@ Things that can't be done from the code, in the order to do them. Tick them off 
 
 - [ ] **Create a dev bot.** In Telegram, message [@BotFather](https://t.me/BotFather), send `/newbot`, and pick a name and username (e.g. `Price Tracker (dev)` / `my_price_tracker_dev_bot`). Put its API key in your **local** `.env` as `BOT_API_KEY`. From now on, the production key only lives in the server's `.env`.
 - [ ] **Test locally with the dev bot** (`go run .` or F5). Go through the local items of the checklist in section 7: every command and button, "<< Return" after restarting the bot, the interval change, and a tracker being resumed after a restart with the "the bot was restarted" message.
+- [ ] **Run each of your real trackers once** with the dev bot (copy the real `tracker_configs/*.json` from the server) and compare the values with what the production bot showed. The colly/goquery upgrade is covered by tests, but only with sample HTML.
 - [ ] **Update your local golangci-lint** so it can lint Go 1.27 code (the installed one was built with Go 1.26):
   ```bash
   go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
@@ -348,13 +356,23 @@ Versions from `go list -m -u all` and proxy.golang.org on 2026-09-24:
 | `golang.org/x/crypto` (indirect) | v0.31.0 | v0.57.0 | Security fixes. |
 | `golang.org/x/sys`, `x/text` (indirect) | v0.28 / v0.21 | v0.48 / v0.42 | |
 
-**Steps:**
+**Steps (as done):**
 ```bash
 go get -u ./...
+go get github.com/gobwas/glob@v0.2.3   # undo the incompatible bump, see below
 go mod tidy
-go build ./... && go vet ./...
+go build ./... && go vet ./... && go test ./...
 ```
-Then run locally against the **dev** bot, run each tracker once (`/run <code>`), and compare the values with `/status` before and after.
+
+**Recipe for future updates.** `go get -u ./...` upgrades *every* dependency, including indirect ones, past the versions their parents were tested with. That's what broke colly via `gobwas/glob`. Safer:
+```bash
+# direct dependencies, one at a time or together
+go get github.com/gocolly/colly/v2@latest github.com/go-playground/validator/v10@latest        github.com/tidwall/gjson@latest github.com/joho/godotenv@latest
+# security-relevant indirect modules
+go get golang.org/x/net@latest golang.org/x/crypto@latest
+go mod tidy && go build ./... && go test ./...
+```
+Then check with `govulncheck` (`go run golang.org/x/vuln/cmd/govulncheck@latest ./...`) or let the Trivy workflow do it.
 
 ---
 
