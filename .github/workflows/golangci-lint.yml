@@ -45,10 +45,16 @@ jobs:
 
       - name: Run GolangCI-Lint
         run: |
+          set -euo pipefail
+
           golangci-lint run --config=.golangci.yml --timeout=5m
 
           format_diff_file=$(mktemp)
-          golangci-lint fmt --config=.golangci.yml --diff > "$format_diff_file"
+          if ! golangci-lint fmt --config=.golangci.yml --diff > "$format_diff_file"; then
+            cat "$format_diff_file"
+            echo "golangci-lint fmt failed"
+            exit 1
+          fi
 
           if [ -s "$format_diff_file" ]; then
             cat "$format_diff_file"
