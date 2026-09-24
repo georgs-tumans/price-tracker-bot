@@ -5,7 +5,9 @@ import (
 	"errors"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/joho/godotenv"
@@ -91,8 +93,17 @@ func loadTrackers(fileVar string) ([]*Tracker, error) {
 	// Check if a file path is provided
 	filePath := os.Getenv(fileVar)
 	if filePath != "" {
-		// #nosec G304,G703 -- tracker files are intentionally configured through environment variables and may use absolute or relative paths.
-		data, err := os.ReadFile(filePath)
+		cleanFilePath := filepath.Clean(filePath)
+		if filepath.IsAbs(cleanFilePath) {
+			return nil, errors.New("tracker file path must be relative to tracker_configs")
+		}
+
+		relativePath, err := filepath.Rel("tracker_configs", cleanFilePath)
+		if err != nil || relativePath == ".." || strings.HasPrefix(relativePath, ".."+string(os.PathSeparator)) {
+			return nil, errors.New("tracker file path must be within tracker_configs")
+		}
+
+		data, err := os.ReadFile(cleanFilePath)
 		if err != nil {
 			return nil, errors.New("failed to read tracker file")
 		}

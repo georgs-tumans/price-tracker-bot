@@ -50,6 +50,8 @@ jobs:
           golangci-lint run --config=.golangci.yml --timeout=5m
 
           format_diff_file=$(mktemp)
+          trap 'rm -f "$format_diff_file"' EXIT
+
           if ! golangci-lint fmt --config=.golangci.yml --diff > "$format_diff_file"; then
             cat "$format_diff_file"
             echo "golangci-lint fmt failed"
