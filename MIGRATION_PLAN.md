@@ -18,15 +18,28 @@ The bot does its job but has three kinds of problems. They're listed in the orde
 
 ### Progress
 
-Done (2026-09-24):
+**Batch 1 (commit `17eebc8`):**
 - [x] `fasthttp` replaced with `net/http` with a 20s timeout (6.1; also covers the tracker half of 2.1).
-- [x] `deleteWebhook` goes through the Telegram library instead of a hand-built URL, so the token no longer ends up in logged errors.
-- [x] `ALLOWED_CHAT_IDS` (2.5), with tests in `config/config_test.go`.
-- [x] Docker Compose as the only deploy path: builds locally, `restart: unless-stopped`, with `deployment/start.sh` / `stop.sh`. Old `docker run` scripts removed (3.3). The ports mapping stays until webhook mode is removed.
+- [x] `ALLOWED_CHAT_IDS` (2.5), with tests.
+- [x] Docker Compose as the only deploy path, with `deployment/start.sh` / `stop.sh`; old `docker run` scripts removed (3.3).
 - [x] Dockerfile on `golang:1.27-alpine` (3.1).
-- [x] README: dev bot setup (2.4), chat restriction, compose deployment. `ENVIROMENT` typo fixed in `.env.example` and README.
+- [x] README: dev bot setup (2.4), chat restriction, compose deployment. `ENVIROMENT` typo fixed.
 
-Still to do: everything else in Phases 1–4, including the switch to polling only, the Telegram client timeout (2.1), state persistence (2.2), and deleting `.github/workflows/deploy.yml`.
+**Phase 1 (done):**
+- [x] Long polling only (section 1): webhook handler, HTTP server, `WEBHOOK_URL` / `PORT` / `ENVIRONMENT`, the ports mapping, and the ngrok script and config removed. Any leftover webhook is deleted at startup.
+- [x] Telegram HTTP client timeout of 90s (2.1).
+- [x] Tracker state saved to `STATE_FILE` on every change, resumed on startup, with a "the bot was restarted" message per chat. Compose mounts a `bot-data` volume at `/data` (2.2).
+- [x] Concurrency and crash fixes (2.3): per-tracker mutex with a `Status()` snapshot, no sleep-based restart, `recover` in tracker runs and update handling, nil-safe "Return" / user input / message edit, per-chat `AwaitingUserInput` / `CustomKeyboardActive`, locked navigation map.
+- [x] Leaks and spam (2.6): new colly collector per run (this also fixes an error from `OnError` being overwritten by `Visit`'s return value), stateless API client, precompiled regex, error notification sent once per failure streak, error history capped at 20, callback queries answered.
+- [x] Graceful shutdown on SIGTERM / Ctrl+C.
+- [x] Smaller items from 6.3/6.4: sentinel error instead of comparing the misspelled string, redundant `Stop()` / `Start()` around `UpdateInterval` removed, `ERROR_NOTIFY_LIMIT` parse errors now fail startup, `udpate.go` renamed to `update.go`.
+- [x] Tests for the tracker lifecycle, error history, panic recovery and state file; `go test -race` passes (run in a `golang:1.27` container).
+- 2.4 (409 logging): no code change needed. The current library already logs Telegram's own message ("Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"). Phase 4 routes it through `WithErrorsHandler`.
+- 2.7 heartbeat `HEALTHCHECK`: deferred. With the scratch image (3.4) it needs a `-healthcheck` flag in the binary; decide during Phase 2.
+
+**Not yet verified against real Telegram.** Needs a run with the dev bot (see the checklist in section 7).
+
+Next: Phase 2 (toolchain/CI, scratch Dockerfile, deleting `deploy.yml`).
 
 | Phase | What | Effort | Can ship on its own |
 |---|---|---|---|
@@ -212,7 +225,36 @@ Deployment is now done by hand on a home server: `git pull`, then start the cont
 - **Clean up the old scripts.** Delete `build-and-run-docker.sh`, `docker_build_and_run.ps1`, `docker_run.ps1`, `docker_run_ngrok.ps1` and `ngrok.yml.example`, or reduce the run scripts to the compose command above. Rewrite the README's setup and deployment sections: no ngrok, no webhook mode, and a note that local development uses a separate dev bot token (2.4).
 - Close the stale remote branches (`deploy_v4`, `deploy_v5`, `deploy_6`, the two dependabot branches — Phase 3 supersedes them).
 
-### 3.4 Config
+### 3.4 Dockerfile: scratch image, non-root, better caching
+
+**Today:** build in `golang:1.27-alpine`, run in `alpine:latest` as **root**. `COPY . .` comes before `go mod download`, so every code change downloads all modules again. There's no `.dockerignore`, so `.env` (with the bot token) and `.git` get sent into the build. `ENV TZ=${TZ:-UTC}` refers to a variable that doesn't exist at build time (Docker warns about it).
+
+**Target:** the same pattern as Woodpecker at work: build a static binary, then copy it into an empty `scratch` image. It works for this bot because everything is pure Go (no cgo), but scratch has nothing in it, so three things have to be provided explicitly:
+
+| Needed | Why | How |
+|---|---|---|
+| CA certificates | HTTPS to Telegram and every tracker URL | `COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/` |
+| Time zone data | `TZ` controls the times shown in `/status` | Build with `-tags timetzdata`, which embeds Go's zone database in the binary (~450 KB) |
+| A non-root user | Security | `USER 65532:65532`. Scratch has no `/etc/passwd`, but a numeric UID works. |
+
+Other changes:
+- Copy `go.mod`/`go.sum` and download modules **before** copying the source, and use BuildKit cache mounts for the module and build caches. Code-only changes then rebuild in seconds.
+- `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w"` gives a smaller, reproducible static binary.
+- Add a `.dockerignore` (`.env`, `.git`, `.github`, `.vscode`, `*.md`, `deployment/`), but **not** `tracker_configs/*.json`, which get baked into the image.
+- Create `/data` in the build stage and `COPY --chown=65532:65532` it into the image. Docker initializes a new named volume from the image's directory, ownership included, so the non-root user can write the state file (2.2).
+- `ENV TZ=UTC` as the default; the `.env` value overrides it at runtime.
+- Compose hardening that comes almost free with this image: `read_only: true`, `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`. The only writable place is the `/data` volume.
+
+**Result:** image size drops from ~20 MB (alpine + binary) to roughly the binary itself (~10–12 MB). There's no shell, package manager or OS packages for Trivy to flag, and the process can't write anywhere except `/data`.
+
+**Trade-offs:**
+- There's no shell in the container, so no `docker exec -it … sh` for debugging. Logs still work, and `docker cp` works for files.
+- A Docker `HEALTHCHECK` (2.7) can't run shell commands, so the binary itself would need a `-healthcheck` flag to check the heartbeat file.
+- `gcr.io/distroless/static-debian12:nonroot` is the alternative: scratch plus CA certificates, time zone data and a non-root user, maintained by Google. Equally valid. Scratch is chosen because it's what you use at work and adds no extra registry dependency.
+
+**On "rootless":** this is about the container's process not running as root, which covers the realistic risk. "Rootless Docker" (running the Docker daemon itself as a normal user) is a separate host-level setup and not needed here.
+
+### 3.5 Config
 
 - Remove `WEBHOOK_URL`, `PORT` and `ENVIRONMENT` (section 1). This also gets rid of the `ENVIROMENT` typo in `.env.example` and the README, which currently makes startup fail for anyone copying the example.
 - Add `STATE_FILE` (default `/data/state.json`) and `ALLOWED_CHAT_IDS` to `config.go`, `.env.example` and the README.
@@ -293,7 +335,7 @@ Handlers and trackers then depend on `Messenger` instead of the library type. Th
 | `NewRemoveKeyboard(true)` | `&models.ReplyKeyboardRemove{RemoveKeyboard: true}` |
 | `AnswerCallbackQuery` (added in 2.6) | `b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{CallbackQueryID: q.ID})` |
 
-**Watch out:** handlers run **asynchronously** by default (one goroutine per update). The locking from 2.3 isn't optional after this change. Don't cover it up with `WithNotAsyncHandlers()`.
+**Watch out:** handlers run **asynchronously** by default (one goroutine per update). The locking from 2.3 isn't optional after this change. Don't cover it up with `WithNotAsyncHandlers()`. The navigation map is locked, but the fields of a single chat's `NavigationState` are still changed without a lock. That's safe today because updates are handled one at a time. With async handlers, add a per-chat mutex held while an update is handled, so two quick clicks in the same chat can't interleave.
 
 ### 5.4 Target `main` / bot setup (sketch)
 

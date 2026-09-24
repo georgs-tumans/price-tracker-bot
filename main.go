@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
-	"strings"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"pricetrackerbot/botfixer"
 )
@@ -18,16 +21,10 @@ func main() {
 		}
 	}()
 
-	log.Println("Starting bot service")
-	botFixer := botfixer.NewBotFixer()
-	config := botFixer.Config
+	// Stop cleanly on Ctrl+C and on `docker stop`
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	if strings.ToLower(strings.TrimSpace(config.Environment)) == "local" {
-		if err := botFixer.DeleteWebhook(); err != nil {
-			log.Printf("[main] Error deleting webhook: %v", err)
-		}
-		botFixer.InitializeBotLongPolling()
-	} else {
-		botFixer.InitializeBotWebhook()
-	}
+	log.Println("Starting bot service")
+	botfixer.NewBotFixer().Run(ctx)
 }

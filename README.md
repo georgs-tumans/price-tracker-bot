@@ -34,7 +34,6 @@ General commands:
 - **A second bot for local development** (see [Running locally while the server copy is running](#running-locally-while-the-server-copy-is-running)).
 - Docker with the compose plugin (for running on a server)
 - Go installed (for running it locally as a regular console app)
-- ngrok running for local development (only if testing the webhooks approach)
 
 ## Use
 
@@ -42,6 +41,12 @@ General commands:
 2. Build and run this app
 3. Use commands to interact with your new Telegram bot :)
 
+
+## How it works
+
+The bot receives updates from Telegram via **long polling**: it keeps a request open to Telegram's servers and gets new messages as soon as they arrive. It only makes outgoing connections, so it needs no public URL, HTTPS certificate, port forwarding or tunnel, and it works the same on a home server as on a laptop.
+
+Running trackers are saved to a state file (`STATE_FILE`). After a restart (crash, deploy, server reboot) the bot resumes them and sends a "the bot was restarted" message to the chats they belong to.
 
 ## Configuration
 
@@ -79,6 +84,8 @@ git pull
 
 Follow the logs with `docker logs -f price_tracker_bot`.
 
+The tracker state lives in the `bot-data` Docker volume, so it survives rebuilds. `stop.sh` keeps it; `docker compose down -v` would delete it.
+
 The scripts can be run from any directory. The first time `start.sh` runs, it removes a leftover `price_tracker_bot` container created by the old `docker run` scripts, if there is one.
 
 
@@ -86,7 +93,7 @@ The scripts can be run from any directory. The first time `start.sh` runs, it re
 
 ### Running locally while the server copy is running
 
-Telegram only lets **one running copy of a bot receive updates**. If you start the bot locally with the same bot API key the server uses, the two copies fight over it: commands randomly reach one copy or the other, each copy's trackers send their own notifications, and running locally in the `local` mode also deletes the webhook the server copy relies on.
+Telegram only lets **one running copy of a bot receive updates**. If you start the bot locally with the same bot API key the server uses, the two copies fight over it: each one's requests get rejected with `Conflict: terminated by other getUpdates request` in the logs, commands randomly reach one copy or the other, and each copy's trackers send their own notifications.
 
 The fix is to use a separate bot for development:
 
@@ -96,23 +103,9 @@ The fix is to use a separate bot for development:
 
 ### Running locally
 
-Set `ENVIRONMENT` to `local` in your `.env`. On startup this deletes any webhook registered for the bot API key and uses the long polling approach, which needs no public URL. Then press `F5` in VS Code (launch profile included) or run `go run .` in the project root.
+Press `F5` in VS Code (launch profile included) or run `go run .` in the project root. Tracker state is saved to `data/state.json` (ignored by git).
 
-If you need to run it in a container locally, `docker compose -f deployment/docker-compose.yml up --build` works the same way as on the server.
-
-**NB**: long polling does not work while a webhook is registered for the same bot API key. The `local` mode deletes it automatically on startup.
-
-### Using the webhooks approach (for testing/modifying webhook initialization)
-
-With `ENVIRONMENT` set to anything other than `local` (e.g. `cloud`/`docker`), the bot registers a webhook at `WEBHOOK_URL` on startup and receives updates through it. Telegram must be able to reach that URL over HTTPS.
-
-For local testing, expose the bot with ngrok:
-
-* Create an ngrok configuration file `ngrok.yml` based on this [template](./ngrok.yml.example)
-* Edit the [script](/deployment/docker_run_ngrok.ps1) and set the location of the newly created `ngrok.yml`
-* Run the script
-
-Open `http://localhost:4040/status` to see the ngrok generated URL, put it in `WEBHOOK_URL` and start the bot.
+To run it in a container locally instead: `docker compose -f deployment/docker-compose.yml up --build`.
 
 ### Linting
 

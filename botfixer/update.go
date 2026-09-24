@@ -1,61 +1,19 @@
 package botfixer
 
 import (
-	"context"
-	"encoding/json"
-	"io"
 	"log"
-	"net/http"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-func (b *BotFixer) webhookHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		log.Printf("[Bot fixer] Error reading request body: %v", err)
-		http.Error(w, "Could not read request body", http.StatusBadRequest)
-
-		return
-	}
-
-	// Parse the body as a Telegram update
-	var update tgbotapi.Update
-	if err := json.Unmarshal(body, &update); err != nil {
-		log.Printf("[Bot fixer] Error parsing update: %v", err)
-		http.Error(w, "Could not parse update", http.StatusBadRequest)
-
-		return
-	}
-
-	// Handle the update
-	b.handleUpdate(update)
-
-	// Respond with a 200 OK status to Telegram WITH update_id acknowledgment
-	// This is REQUIRED by Telegram Bot API for webhooks - without it, updates stop after a few days
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"ok":     true,
-		"result": update.UpdateID,
-	})
-}
-
-func (b *BotFixer) longPollingHandler(ctx context.Context, updates tgbotapi.UpdatesChannel) {
-	// `for {` means the loop is infinite until we manually stop it
-	for {
-		select {
-		// stop looping if ctx is cancelled
-		case <-ctx.Done():
-			return
-		// receive update from channel and then handle it
-		case update := <-updates:
-			b.handleUpdate(update)
-		}
-	}
-}
-
 func (b *BotFixer) handleUpdate(update tgbotapi.Update) {
+	// A panic while handling one update must not take down the whole bot
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[Bot fixer] Recovered from panic while handling update %d: %v", update.UpdateID, r)
+		}
+	}()
+
 	if chat := updateChat(update); chat == nil || !b.Config.IsChatAllowed(chat.ID) {
 		if chat != nil {
 			log.Printf("[Bot fixer] Ignoring update from chat %d (not in ALLOWED_CHAT_IDS)", chat.ID)
@@ -111,7 +69,7 @@ func (b *BotFixer) handleMessage(message *tgbotapi.Message) {
 	}
 
 	// Handle user input after a certain command/action has requested it
-	if b.CommandHandler.AwaitingUserInput {
+	if b.CommandHandler.GetUserNavigationState(message.Chat.ID).AwaitingUserInput {
 		b.CommandHandler.GetUserNavigationState(message.Chat.ID).BackButtonEnabled = true
 		if err := b.CommandHandler.HandleUserInput(message.Chat.ID, text, nil); err != nil {
 			log.Printf("[Bot fixer] An error occurred while handling user input: %s", err.Error())
@@ -124,6 +82,11 @@ func (b *BotFixer) handleMessage(message *tgbotapi.Message) {
 }
 
 func (b *BotFixer) handleButton(query *tgbotapi.CallbackQuery) {
+	// Tells Telegram the click was received, otherwise the button keeps showing a loading spinner
+	if _, err := b.Bot.Request(tgbotapi.NewCallback(query.ID, "")); err != nil {
+		log.Printf("[Bot fixer] Error answering callback query: %s", err.Error())
+	}
+
 	command := query.Data
 	b.CommandHandler.GetUserNavigationState(query.Message.Chat.ID).BackButtonEnabled = true
 

@@ -11,13 +11,18 @@ import (
 	"pricetrackerbot/handlers"
 )
 
-const webhookEndpoint = "/webhook"
+const (
+	// How long Telegram holds a getUpdates request open while waiting for new updates
+	pollTimeoutSeconds = 60
+	// Must be longer than the poll timeout, otherwise every idle poll would time out. Without any timeout,
+	// a request on a silently dropped connection would hang forever and the bot would stop receiving updates.
+	httpClientTimeout = (pollTimeoutSeconds + 30) * time.Second
+)
 
 type BotFixer struct {
-	Bot               *tgbotapi.BotAPI
-	Config            *config.Configuration
-	BondsClientActive bool
-	CommandHandler    *handlers.CommandHandler
+	Bot            *tgbotapi.BotAPI
+	Config         *config.Configuration
+	CommandHandler *handlers.CommandHandler
 }
 
 func NewBotFixer() *BotFixer {
@@ -26,7 +31,7 @@ func NewBotFixer() *BotFixer {
 	}
 
 	var err error
-	botFixer.Bot, err = tgbotapi.NewBotAPI(botFixer.Config.BotAPIKey)
+	botFixer.Bot, err = tgbotapi.NewBotAPIWithClient(botFixer.Config.BotAPIKey, tgbotapi.APIEndpoint, &http.Client{Timeout: httpClientTimeout})
 	if err != nil {
 		log.Panic(err)
 		return nil
@@ -37,66 +42,48 @@ func NewBotFixer() *BotFixer {
 	return botFixer
 }
 
-func (b *BotFixer) InitializeBotLongPolling() {
+// Run receives updates via long polling until the context is cancelled.
+func (b *BotFixer) Run(ctx context.Context) {
 	// Set this to true to log all interactions with telegram servers
 	b.Bot.Debug = false
+
+	// Telegram rejects getUpdates while a webhook is registered, e.g. one left over from the old webhook mode
+	if err := b.deleteWebhook(); err != nil {
+		log.Printf("[Bot fixer] Error deleting webhook: %v", err)
+	}
+
+	b.CommandHandler.ResumeTrackers()
 
 	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 60
+	u.Timeout = pollTimeoutSeconds
 
-	// Create a new cancellable background context. Calling `cancel()` leads to the cancellation of the context
-	ctx := context.Background()
-
-	// `updates` is a golang channel which receives telegram updates
+	// `updates` is a golang channel which receives telegram updates. If another instance polls with the same
+	// bot API key, the library logs "Conflict: terminated by other getUpdates request" and keeps retrying.
 	updates := b.Bot.GetUpdatesChan(u)
 
-	// Pass cancellable context to goroutine
-	go b.longPollingHandler(ctx, updates)
+	log.Println("[Bot fixer] Bot initialized via long polling; listening for updates")
 
-	// Tell the user the bot is online
-	log.Println("[Bot fixer] Bot initialized via the long polling approach; listening for updates")
+	for {
+		select {
+		case <-ctx.Done():
+			b.Bot.StopReceivingUpdates()
+			log.Println("[Bot fixer] Shutting down")
 
-	select {}
+			return
+		case update, ok := <-updates:
+			if !ok {
+				return
+			}
+
+			b.handleUpdate(update)
+		}
+	}
 }
 
-func (b *BotFixer) InitializeBotWebhook() {
-	// Set this to true to log all interactions with telegram servers
-	b.Bot.Debug = false
-
-	wh, err := tgbotapi.NewWebhook(b.Config.WebhookURL + webhookEndpoint)
-	if err != nil {
-		log.Fatalf("[Bot fixer] Error creating webhook: %v", err)
-	}
-
-	_, err = b.Bot.Request(wh)
-	if err != nil {
-		log.Fatalf("[Bot fixer] Error setting webhook: %v", err)
-	}
-
-	log.Printf("[Bot fixer] Webhook set: %s", b.Config.WebhookURL+webhookEndpoint)
-
-	http.HandleFunc(webhookEndpoint, b.webhookHandler)
-
-	log.Println("[Bot fixer] Starting server on port " + b.Config.Port)
-	log.Println("[Bot fixer] Bot initialized via the webhook approach; listening for updates")
-
-	//nolint:mnd
-	srv := &http.Server{
-		Addr:              ":" + b.Config.Port,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       30 * time.Second,
-		ReadHeaderTimeout: 5 * time.Second,
-		Handler:           nil,
-	}
-	log.Fatal(srv.ListenAndServe())
-}
-
-func (b *BotFixer) DeleteWebhook() error {
+func (b *BotFixer) deleteWebhook() error {
 	// Done through the library so the bot token never ends up in a logged request URL
 	_, err := b.Bot.Request(tgbotapi.DeleteWebhookConfig{})
 	if err != nil {
-		log.Fatalf("[Bot fixer] Error deleting webhook: %v", err)
 		return err
 	}
 

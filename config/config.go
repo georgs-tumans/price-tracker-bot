@@ -28,13 +28,13 @@ type Tracker struct {
 	DataExtractionPath string           `json:"dataExtractionPath" validate:"required"`
 }
 
+const defaultStateFile = "data/state.json"
+
 type Configuration struct {
-	BotAPIKey        string     `validate:"required"`
-	WebhookURL       string     `validate:"required,url"`
-	Port             string     `validate:"omitempty,numeric"`
-	Environment      string     `validate:"required"`
-	ErrorNotifyLimit int        `validate:"omitempty,numeric"`
+	BotAPIKey        string `validate:"required"`
+	ErrorNotifyLimit int    `validate:"min=1"`
 	AllowedChatIDs   []int64
+	StateFile        string     `validate:"required"`
 	APITrackers      []*Tracker `validate:"dive"`
 	ScraperTrackers  []*Tracker `validate:"dive"`
 }
@@ -46,20 +46,24 @@ func GetConfig() *Configuration {
 		log.Println("[Config] Loading configuration")
 		err := godotenv.Load()
 		if err != nil {
-			log.Println("[GetConfig] Error loading .env file")
+			log.Println("[GetConfig] No .env file loaded, using environment variables only")
 		}
 
 		config = &Configuration{
-			BotAPIKey:   os.Getenv("BOT_API_KEY"),
-			WebhookURL:  os.Getenv("WEBHOOK_URL"),
-			Port:        os.Getenv("PORT"),
-			Environment: os.Getenv("ENVIRONMENT"),
+			BotAPIKey: os.Getenv("BOT_API_KEY"),
+			StateFile: os.Getenv("STATE_FILE"),
+		}
+
+		if config.StateFile == "" {
+			config.StateFile = defaultStateFile
 		}
 
 		errorLimit := os.Getenv("ERROR_NOTIFY_LIMIT")
 		if errorLimit != "" {
-			converted, _ := strconv.Atoi(errorLimit)
-			config.ErrorNotifyLimit = converted
+			config.ErrorNotifyLimit, err = strconv.Atoi(errorLimit)
+			if err != nil {
+				log.Fatalf("[GetConfig] Error parsing ERROR_NOTIFY_LIMIT: %v", err)
+			}
 		} else {
 			config.ErrorNotifyLimit = 3
 		}

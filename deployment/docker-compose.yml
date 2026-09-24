@@ -6,7 +6,11 @@ services:
     image: price_tracker_bot
     container_name: price_tracker_bot
     env_file: ../.env
+    environment:
+      STATE_FILE: /data/state.json
     restart: unless-stopped
-    # Only needed while the webhook mode exists; remove once the bot is long polling only
-    ports:
-      - "7080:8080"
+    volumes:
+      - bot-data:/data # Running trackers, resumed after restarts
+
+volumes:
+  bot-data:

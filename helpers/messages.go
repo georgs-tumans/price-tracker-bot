@@ -38,7 +38,8 @@ func SendMessageHTMLWithMenu(bot *tgbotapi.BotAPI, chatID int64, text string, en
 }
 
 func EditMessageWithMenu(bot *tgbotapi.BotAPI, chatID int64, messageID int, text string, menu *tgbotapi.InlineKeyboardMarkup) {
-	msg := tgbotapi.NewEditMessageTextAndMarkup(chatID, messageID, text, *menu)
+	msg := tgbotapi.NewEditMessageText(chatID, messageID, text)
+	msg.ReplyMarkup = menu
 	msg.ParseMode = tgbotapi.ModeHTML
 
 	_, err := bot.Send(msg)
