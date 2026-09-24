@@ -13,7 +13,7 @@ func FormatNotificationCriteriaString(notifyCriteria []config.NotifyCriteria) st
 		builder.WriteString("Active notify criteria:\n")
 		for _, criteria := range notifyCriteria {
 			operatorEscaped := strings.ReplaceAll(strings.ReplaceAll(criteria.Operator, "<", "&lt;"), ">", "&gt;")
-			builder.WriteString(fmt.Sprintf(" - tracked value %s %s\n", operatorEscaped, criteria.Value))
+			fmt.Fprintf(&builder, " - tracked value %s %s\n", operatorEscaped, criteria.Value)
 		}
 
 		return builder.String()

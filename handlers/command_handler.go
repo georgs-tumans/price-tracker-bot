@@ -8,13 +8,15 @@ import (
 	"strings"
 	"sync"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/go-telegram/bot/models"
 	"pricetrackerbot/config"
 	"pricetrackerbot/helpers"
 	"pricetrackerbot/utilities"
 )
 
 const (
+	trackerCodeParam = "tracker_code"
+
 	generalType = "general"
 	trackerType = "tracker"
 	bothType    = "both"
@@ -31,33 +33,30 @@ type Command struct {
 }
 
 type CommandHandler struct {
-	AwaitingUserInput    bool
-	CustomKeyboardActive bool
-	config               *config.Configuration
-	runningTrackers      []*Tracker
-	commandMap           map[string]*Command
-	bot                  *tgbotapi.BotAPI
-	mu                   sync.Mutex
-	Navigation           map[int64]*NavigationState
+	config          *config.Configuration
+	runningTrackers []*Tracker
+	commandMap      map[string]*Command
+	messenger       helpers.Messenger
+	mu              sync.Mutex // Guards runningTrackers
+	navigationMu    sync.Mutex // Guards navigation
+	navigation      map[int64]*NavigationState
 }
 
 type CommandFunc func(code string, chatID int64, commandParam *string) error
 
-func NewCommandHandler(bot *tgbotapi.BotAPI) *CommandHandler {
+func NewCommandHandler(messenger helpers.Messenger, config *config.Configuration) *CommandHandler {
 	ch := &CommandHandler{
-		config:               config.GetConfig(),
-		bot:                  bot,
-		AwaitingUserInput:    false,
-		CustomKeyboardActive: false,
-		Navigation:           make(map[int64]*NavigationState),
+		config:     config,
+		messenger:  messenger,
+		navigation: make(map[int64]*NavigationState),
 	}
 
 	ch.commandMap = map[string]*Command{
-		"start":    {Type: generalType, DescriptionGeneral: "Bot start command", Handler: ch.handleHelp, Hidden: true, Params: []string{"tracker_code"}},
-		"run":      {Type: bothType, DescriptionTracker: "Run a tracker", DescriptionGeneral: "Run all available trackers", Handler: ch.handleStart, Hidden: false, Params: []string{"tracker_code"}},
-		"stop":     {Type: bothType, DescriptionTracker: "Stop a tracker", DescriptionGeneral: "Stop all running trackers", Handler: ch.handleStop, Hidden: false, Params: []string{"tracker_code"}},
-		"interval": {Type: trackerType, DescriptionTracker: "Change the tracker run interval", Handler: ch.handleSetInterval, Hidden: false, Params: []string{"tracker_code", "interval*"}},
-		"status":   {Type: bothType, DescriptionTracker: "View a particular tracker status", DescriptionGeneral: "View status of all available trackers", Handler: ch.handleStatus, Hidden: false, Params: []string{"tracker_code"}},
+		"start":    {Type: generalType, DescriptionGeneral: "Bot start command", Handler: ch.handleHelp, Hidden: true, Params: []string{trackerCodeParam}},
+		"run":      {Type: bothType, DescriptionTracker: "Run a tracker", DescriptionGeneral: "Run all available trackers", Handler: ch.handleStart, Hidden: false, Params: []string{trackerCodeParam}},
+		"stop":     {Type: bothType, DescriptionTracker: "Stop a tracker", DescriptionGeneral: "Stop all running trackers", Handler: ch.handleStop, Hidden: false, Params: []string{trackerCodeParam}},
+		"interval": {Type: trackerType, DescriptionTracker: "Change the tracker run interval", Handler: ch.handleSetInterval, Hidden: false, Params: []string{trackerCodeParam, "interval*"}},
+		"status":   {Type: bothType, DescriptionTracker: "View a particular tracker status", DescriptionGeneral: "View status of all available trackers", Handler: ch.handleStatus, Hidden: false, Params: []string{trackerCodeParam}},
 		"help":     {Type: generalType, DescriptionGeneral: "View all available commands", Handler: ch.handleHelp, Hidden: false},
 	}
 
@@ -98,7 +97,7 @@ func (ch *CommandHandler) HandleCommand(chatID int64, commandString string, call
 		}
 	} else {
 		log.Printf("[CommandHandler] Unknown command: %s", command)
-		helpers.SendMessageHTML(ch.bot, chatID, "Unrecognized command", nil)
+		ch.messenger.SendHTML(chatID, "Unrecognized command")
 
 		return errors.New("unknown command")
 	}
@@ -109,6 +108,11 @@ func (ch *CommandHandler) HandleCommand(chatID int64, commandString string, call
 func (ch *CommandHandler) HandleReturn(chatID int64, callbackMessageID *int) error {
 	ch.GetUserNavigationState(chatID).Pop()
 	gotoCommand := ch.GetUserNavigationState(chatID).Peek()
+
+	// The navigation history is lost on restart, so "Return" on an older message has nowhere to go back to
+	if gotoCommand == nil {
+		return ch.HandleCommand(chatID, "/status", callbackMessageID, false)
+	}
 
 	commandString := "/" + gotoCommand.Command
 	if len(gotoCommand.Params) > 0 {
@@ -123,14 +127,19 @@ func (ch *CommandHandler) HandleReturn(chatID int64, callbackMessageID *int) err
 }
 
 func (ch *CommandHandler) HandleUserInput(chatID int64, userInput string, callbackMessageID *int) error {
-	ch.AwaitingUserInput = false
+	navigationState := ch.GetUserNavigationState(chatID)
+	navigationState.AwaitingUserInput = false
 	// Hide keyboard after user input
-	if ch.CustomKeyboardActive {
-		helpers.SendMessageRemoveKeyboard(ch.bot, chatID)
-		ch.CustomKeyboardActive = false
+	if navigationState.CustomKeyboardActive {
+		ch.messenger.RemoveKeyboard(chatID)
+		navigationState.CustomKeyboardActive = false
 	}
 
-	gotoCommand := ch.GetUserNavigationState(chatID).Peek()
+	gotoCommand := navigationState.Peek()
+	if gotoCommand == nil {
+		return errors.New("no command is waiting for user input")
+	}
+
 	commandString := "/" + gotoCommand.Command
 	if len(gotoCommand.Params) > 0 {
 		commandString += " " + strings.Join(gotoCommand.Params, " ")
@@ -146,7 +155,7 @@ func (ch *CommandHandler) HandleUserInput(chatID int64, userInput string, callba
 }
 
 func (ch *CommandHandler) startTracker(trackerCode string, chatID int64, errors map[string]error) {
-	if newTracker, err := CreateTracker(ch.bot, trackerCode, 0, ch.config, chatID); err != nil {
+	if newTracker, err := CreateTracker(ch.messenger, trackerCode, 0, ch.config, chatID); err != nil {
 		errors[trackerCode] = err
 	} else {
 		ch.AddRunningTracker(newTracker)
@@ -170,11 +179,13 @@ func (ch *CommandHandler) startAllTrackers(chatID int64) {
 		}
 	}
 
+	ch.saveState()
+
 	if len(errors) > 0 {
 		var builder strings.Builder
 		builder.WriteString("Failed to start the following trackers:\n")
 		for code, err := range errors {
-			builder.WriteString(fmt.Sprintf(" - %s: %s\n", code, err.Error()))
+			fmt.Fprintf(&builder, " - %s: %s\n", code, err.Error())
 		}
 
 		ch.handleCommandMessage(chatID, builder.String(), nil)
@@ -193,11 +204,11 @@ func (ch *CommandHandler) handleStart(code string, chatID int64, _ *string) erro
 
 	// Start a specific tracker
 	if tracker := ch.GetActiveTracker(code); tracker == nil {
-		newTracker, err := CreateTracker(ch.bot, code, 0, ch.config, chatID)
+		newTracker, err := CreateTracker(ch.messenger, code, 0, ch.config, chatID)
 		if err != nil {
 			log.Printf("[CommandHandler] Error creating a new tracker: %s", code)
 			message := "Failed to start the tracker :("
-			if err.Error() == "uncregonzied tracker code" {
+			if errors.Is(err, errUnrecognizedTracker) {
 				message = "Invalid command, tracker with code '" + code + "' not found :("
 			}
 
@@ -207,6 +218,7 @@ func (ch *CommandHandler) handleStart(code string, chatID int64, _ *string) erro
 		}
 		ch.AddRunningTracker(newTracker)
 		newTracker.Start()
+		ch.saveState()
 
 		ch.handleCommandMessage(chatID, "Tracker '"+code+"' has been started", nil)
 		log.Printf("[CommandHandler] Starting tracker: %s", code)
@@ -222,6 +234,7 @@ func (ch *CommandHandler) handleStop(code string, chatID int64, _ *string) error
 	// Stop all trackers
 	if code == "" {
 		ch.StopAllTrackers()
+		ch.saveState()
 		ch.handleCommandMessage(chatID, "All running trackers have been stopped", nil)
 
 		return nil
@@ -231,6 +244,7 @@ func (ch *CommandHandler) handleStop(code string, chatID int64, _ *string) error
 	if tracker := ch.GetActiveTracker(code); tracker != nil {
 		ch.RemoveRunningTracker(code)
 		tracker.Stop()
+		ch.saveState()
 		ch.handleCommandMessage(chatID, "Tracker '"+code+"' has been stopped", nil)
 	} else {
 		log.Printf("[CommandHandler] Tracker '%s' is not running", code)
@@ -252,16 +266,14 @@ func (ch *CommandHandler) StopAllTrackers() {
 
 func (ch *CommandHandler) handleSetInterval(code string, chatID int64, commandParam *string) error {
 	// Means command was initiated from a menu with a button
-	if ch.GetUserNavigationState(chatID).CallbackMessageID != nil {
-		ch.CustomKeyboardActive = true
+	if navigationState := ch.GetUserNavigationState(chatID); navigationState.CallbackMessageID != nil {
+		navigationState.CustomKeyboardActive = true
 
-		helpers.SendMessageHTMLWithKeyboard(
-			ch.bot,
+		ch.messenger.SendHTMLWithKeyboard(
 			chatID, "Send me the new interval value!\n\nThe format: <i>[number][interval type*]</i>\n\nAvailable interval types: \n'm'(minute), 'h'(hour), 'd'(day)",
-			nil,
 			helpers.GetIntervalCustomMenu(),
 		)
-		ch.AwaitingUserInput = true
+		navigationState.AwaitingUserInput = true
 
 		return nil
 	}
@@ -282,10 +294,9 @@ func (ch *CommandHandler) handleSetInterval(code string, chatID int64, commandPa
 	}
 
 	if tracker := ch.GetActiveTracker(code); tracker != nil {
-		tracker.Stop()
 		tracker.UpdateInterval(newInterval)
-		tracker.Start()
-		log.Printf("[CommandHandler] Updated tracker <b>%s</b> interval to %s", code, newInterval)
+		ch.saveState()
+		log.Printf("[CommandHandler] Updated tracker '%s' interval to %s", code, newInterval)
 		ch.handleCommandMessage(chatID, "Tracker <b>"+code+"</b> run interval successfully updated to "+utilities.DurationToString(newInterval), nil)
 
 		return nil
@@ -306,69 +317,65 @@ func (ch *CommandHandler) handleStatus(code string, chatID int64, _ *string) err
 		builder.WriteString("<b>All available trackers</b>\n\n")
 		for _, tracker := range ch.config.APITrackers {
 			activeStatus := ch.processTrackerStatus(tracker, statusMenu)
-			builder.WriteString(fmt.Sprintf(" - %s | %s | api\n", tracker.Code, activeStatus))
+			fmt.Fprintf(&builder, " - %s | %s | api\n", tracker.Code, activeStatus)
 		}
 
 		for _, tracker := range ch.config.ScraperTrackers {
 			activeStatus := ch.processTrackerStatus(tracker, statusMenu)
-			builder.WriteString(fmt.Sprintf(" - %s | %s | scraper\n", tracker.Code, activeStatus))
+			fmt.Fprintf(&builder, " - %s | %s | scraper\n", tracker.Code, activeStatus)
 		}
 
 		// If we are navigating back to the status menu after a back button click, edit the existing message instead of sending a new one.
 		// New message is sent if the status menu is invoked by a written command meaning we are not returning from a back button click.
 		if ch.GetUserNavigationState(chatID).CallbackMessageID != nil {
-			helpers.EditMessageWithMenu(ch.bot, chatID, *ch.GetUserNavigationState(chatID).CallbackMessageID, builder.String(), statusMenu)
+			ch.messenger.EditHTMLWithMenu(chatID, *ch.GetUserNavigationState(chatID).CallbackMessageID, builder.String(), statusMenu)
 		} else {
-			helpers.SendMessageHTMLWithMenu(ch.bot, chatID, builder.String(), nil, statusMenu)
+			ch.messenger.SendHTMLWithMenu(chatID, builder.String(), statusMenu)
 		}
 
 		return nil
 	}
 
-	statusMenu := tgbotapi.NewInlineKeyboardMarkup()
+	statusMenu := &models.InlineKeyboardMarkup{}
 
 	tracker := ch.GetActiveTracker(code)
 	if tracker == nil {
 		log.Printf("[CommandHandler] Tracker '%s' is not active", code)
-		statusMenu.InlineKeyboard = append(statusMenu.InlineKeyboard, tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("Run tracker", "/run "+code),
-		))
-		ch.handleCommandMessage(chatID, "Tracker '"+code+"' is not active", &statusMenu)
+		statusMenu.InlineKeyboard = append(statusMenu.InlineKeyboard, []models.InlineKeyboardButton{helpers.InlineButton("Run tracker", "/run "+code)})
+		ch.handleCommandMessage(chatID, "Tracker '"+code+"' is not active", statusMenu)
 
 		return errors.New("tracker not found")
 	}
 
+	status := tracker.Status()
+
 	var lastRun string
-	if tracker.Status.LastRunTimestamp.IsZero() {
+	if status.LastRunTimestamp.IsZero() {
 		lastRun = "never"
 	} else {
-		lastRun = tracker.Status.LastRunTimestamp.Format("02.01.2006 15:04")
+		lastRun = status.LastRunTimestamp.Format("02.01.2006 15:04")
 	}
 
-	lastRecordedValue := tracker.Status.LastRecordedValue
+	lastRecordedValue := status.LastRecordedValue
 	if lastRecordedValue == "" {
 		lastRecordedValue = "none"
 	}
 
 	var builder strings.Builder
-	builder.WriteString(fmt.Sprintf("<b>Status for tracker %s</b>\n\n", code))
+	fmt.Fprintf(&builder, "<b>Status for tracker %s</b>\n\n", code)
 	builder.WriteString("Status: active\n")
-	builder.WriteString("Tracker started: " + tracker.Status.StartTimestamp.Format("02.01.2006 15:04") + "\n")
+	builder.WriteString("Tracker started: " + status.StartTimestamp.Format("02.01.2006 15:04") + "\n")
 	builder.WriteString("Last run: " + lastRun + "\n")
-	builder.WriteString("Total runs: " + strconv.Itoa(tracker.Status.TotalRuns) + "\n")
+	builder.WriteString("Total runs: " + strconv.Itoa(status.TotalRuns) + "\n")
 	builder.WriteString("Last recorded value: " + lastRecordedValue + "\n")
 	builder.WriteString(helpers.FormatNotificationCriteriaString(tracker.trackerData.NotifyCriteria) + "\n")
-	builder.WriteString("Current run interval: " + utilities.DurationToString(tracker.Status.CurrentInterval) + "\n")
-	builder.WriteString("Execution errors count: " + strconv.Itoa(len(tracker.Status.ExecutionErrors)) + "\n")
+	builder.WriteString("Current run interval: " + utilities.DurationToString(status.CurrentInterval) + "\n")
+	builder.WriteString("Execution errors count: " + strconv.Itoa(status.TotalErrors) + "\n")
 
-	statusMenu.InlineKeyboard = append(statusMenu.InlineKeyboard, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("Stop tracker", "/stop "+code),
-	))
-	statusMenu.InlineKeyboard = append(statusMenu.InlineKeyboard, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("Change run interval", "/interval "+code),
-	))
+	statusMenu.InlineKeyboard = append(statusMenu.InlineKeyboard, []models.InlineKeyboardButton{helpers.InlineButton("Stop tracker", "/stop "+code)})
+	statusMenu.InlineKeyboard = append(statusMenu.InlineKeyboard, []models.InlineKeyboardButton{helpers.InlineButton("Change run interval", "/interval "+code)})
 
-	ch.handleCommandMessage(chatID, builder.String(), &statusMenu)
+	ch.handleCommandMessage(chatID, builder.String(), statusMenu)
 
 	return nil
 }
@@ -377,7 +384,7 @@ func (ch *CommandHandler) handleHelp(code string, chatID int64, _ *string) error
 	// Command only available generally for all trackers
 	if code != "" {
 		log.Printf("[CommandHandler] code passed to the general-only /help command")
-		helpers.SendMessageHTML(ch.bot, chatID, "/help is a general command not specific to any trackers", nil)
+		ch.messenger.SendHTML(chatID, "/help is a general command not specific to any trackers")
 
 		return nil
 	}
@@ -390,7 +397,7 @@ func (ch *CommandHandler) handleHelp(code string, chatID int64, _ *string) error
 
 	for command, cmd := range ch.commandMap {
 		if !cmd.Hidden && (cmd.Type == generalType || cmd.Type == bothType) {
-			builder.WriteString(fmt.Sprintf(" - /%s - %s\n", command, cmd.DescriptionGeneral))
+			fmt.Fprintf(&builder, " - /%s - %s\n", command, cmd.DescriptionGeneral)
 		}
 	}
 
@@ -405,7 +412,7 @@ func (ch *CommandHandler) handleHelp(code string, chatID int64, _ *string) error
 	builder.WriteString("\n<b>*</b>Interval parameter format: \n<i>[number][interval type]</i> (e.g. 5m, 1h, 2d)\n")
 	builder.WriteString("\nAvailable interval types: \n'm'(minute), 'h'(hour), 'd'(day)\n")
 
-	helpers.SendMessageHTML(ch.bot, chatID, builder.String(), nil)
+	ch.messenger.SendHTML(chatID, builder.String())
 
 	return nil
 }
@@ -458,18 +465,16 @@ func formatCommandWithParams(command string, params []string, description string
 	return builder.String()
 }
 
-func (ch *CommandHandler) processTrackerStatus(tracker *config.Tracker, menu *tgbotapi.InlineKeyboardMarkup) string {
-	menuRow := tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("Status ["+tracker.Code+"]", "/status "+tracker.Code),
-	)
+func (ch *CommandHandler) processTrackerStatus(tracker *config.Tracker, menu *models.InlineKeyboardMarkup) string {
+	menuRow := []models.InlineKeyboardButton{helpers.InlineButton("Status ["+tracker.Code+"]", "/status "+tracker.Code)}
 
 	var activeStatus string
 	if ch.GetActiveTracker(tracker.Code) != nil {
 		activeStatus = "active"
-		menuRow = append(menuRow, tgbotapi.NewInlineKeyboardButtonData("Stop ["+tracker.Code+"]", "/stop "+tracker.Code))
+		menuRow = append(menuRow, helpers.InlineButton("Stop ["+tracker.Code+"]", "/stop "+tracker.Code))
 	} else {
 		activeStatus = "inactive"
-		menuRow = append(menuRow, tgbotapi.NewInlineKeyboardButtonData("Start ["+tracker.Code+"]", "/run "+tracker.Code))
+		menuRow = append(menuRow, helpers.InlineButton("Start ["+tracker.Code+"]", "/run "+tracker.Code))
 	}
 
 	menu.InlineKeyboard = append(menu.InlineKeyboard, menuRow)
@@ -477,34 +482,37 @@ func (ch *CommandHandler) processTrackerStatus(tracker *config.Tracker, menu *tg
 	return activeStatus
 }
 
-func (ch *CommandHandler) handleCommandMessage(chatID int64, message string, menu *tgbotapi.InlineKeyboardMarkup) {
+func (ch *CommandHandler) handleCommandMessage(chatID int64, message string, menu *models.InlineKeyboardMarkup) {
 	if ch.GetUserNavigationState(chatID).BackButtonEnabled {
 		menu = helpers.GetReturnButtonMenu(menu)
 
 		// If the message was sent as a result of a button click, edit the existing message instead of sending a new one.
 		callbackMessageID := ch.GetUserNavigationState(chatID).CallbackMessageID
 		if callbackMessageID == nil {
-			helpers.SendMessageHTMLWithMenu(ch.bot, chatID, message, nil, menu)
+			ch.messenger.SendHTMLWithMenu(chatID, message, menu)
 			return
 		}
 
-		helpers.EditMessageWithMenu(ch.bot, chatID, *callbackMessageID, message, menu)
+		ch.messenger.EditHTMLWithMenu(chatID, *callbackMessageID, message, menu)
 
 		return
 	}
 
 	if menu != nil {
-		helpers.SendMessageHTMLWithMenu(ch.bot, chatID, message, nil, menu)
+		ch.messenger.SendHTMLWithMenu(chatID, message, menu)
 		return
 	}
 
-	helpers.SendMessageHTML(ch.bot, chatID, message, nil)
+	ch.messenger.SendHTML(chatID, message)
 }
 
 func (ch *CommandHandler) GetUserNavigationState(chatID int64) *NavigationState {
-	if _, exists := ch.Navigation[chatID]; !exists {
-		ch.Navigation[chatID] = &NavigationState{}
+	ch.navigationMu.Lock()
+	defer ch.navigationMu.Unlock()
+
+	if _, exists := ch.navigation[chatID]; !exists {
+		ch.navigation[chatID] = &NavigationState{}
 	}
 
-	return ch.Navigation[chatID]
+	return ch.navigation[chatID]
 }

@@ -45,14 +45,14 @@ func ProcessNotificationCriteria(trackerData *config.Tracker, extractedValue flo
 
 	if len(fullfilledCriteria) > 0 {
 		var builder strings.Builder
-		builder.WriteString(fmt.Sprintf("Good news, tracker <b>%s</b> has detected something you might be interested in :)\n\n", trackerData.Code))
-		builder.WriteString(fmt.Sprintf("The tracked value is currently at <b>%.2f</b> and thus the following criteria are met:\n", extractedValue))
+		fmt.Fprintf(&builder, "Good news, tracker <b>%s</b> has detected something you might be interested in :)\n\n", trackerData.Code)
+		fmt.Fprintf(&builder, "The tracked value is currently at <b>%.2f</b> and thus the following criteria are met:\n", extractedValue)
 		for _, criteria := range fullfilledCriteria {
 			operatorEscaped := strings.ReplaceAll(strings.ReplaceAll(criteria.Operator, "<", "&lt;"), ">", "&gt;")
-			builder.WriteString(fmt.Sprintf(" - value: %.2f %s %s\n", extractedValue, operatorEscaped, criteria.Value))
+			fmt.Fprintf(&builder, " - value: %.2f %s %s\n", extractedValue, operatorEscaped, criteria.Value)
 		}
 
-		builder.WriteString((fmt.Sprintf("\nMore details <a href=\"%s\">here</a>", trackerData.ViewURL)))
+		fmt.Fprintf(&builder, "\nMore details <a href=\"%s\">here</a>", trackerData.ViewURL)
 
 		return builder.String(), nil
 	}

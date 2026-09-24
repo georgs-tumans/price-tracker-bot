@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"pricetrackerbot/config"
 	"pricetrackerbot/helpers"
 	"pricetrackerbot/utilities"
@@ -16,12 +16,19 @@ import (
 const (
 	API     = "api"
 	Scraper = "scraper"
+
+	// How many of the most recent execution errors are kept for a tracker.
+	executionErrorHistory = 20
 )
+
+var errUnrecognizedTracker = errors.New("unrecognized tracker code")
 
 type TrackerStatus struct {
 	StartTimestamp    time.Time
 	LastRunTimestamp  time.Time
 	TotalRuns         int
+	TotalErrors       int
+	ConsecutiveErrors int
 	LastRecordedValue string
 	CurrentInterval   time.Duration
 	ExecutionErrors   []*TrackerExecutionError
@@ -35,19 +42,19 @@ type TrackerExecutionError struct {
 // Tracker represents a single URL that the bot will track - either through an API or by scraping a website.
 type Tracker struct {
 	Code        string
-	Ticker      *time.Ticker
-	Context     context.Context
-	Cancel      context.CancelFunc
 	Behavior    TrackerBehavior
 	trackerData *config.Tracker
-	Status      TrackerStatus
-	running     bool
 	chatID      int64
-	bot         *tgbotapi.BotAPI
+	messenger   helpers.Messenger
 	errorLimit  int
+
+	// Guards everything below; the tracker goroutine and the command handlers access these concurrently
+	mu     sync.Mutex
+	status TrackerStatus
+	cancel context.CancelFunc // nil while the tracker is not running
 }
 
-func CreateTracker(bot *tgbotapi.BotAPI, code string, runInterval time.Duration, config *config.Configuration, chatID int64) (*Tracker, error) {
+func CreateTracker(messenger helpers.Messenger, code string, runInterval time.Duration, config *config.Configuration, chatID int64) (*Tracker, error) {
 	var behavior TrackerBehavior
 	trackerType := DetermineTrackerType(code, config)
 	trackerData := config.GetTrackerData(code)
@@ -55,14 +62,14 @@ func CreateTracker(bot *tgbotapi.BotAPI, code string, runInterval time.Duration,
 	if trackerData == nil {
 		log.Printf("[Tracker] Failed to create a new tracker: %s; no such tracker found in configuration", code)
 
-		return nil, errors.New("uncregonzied tracker code")
+		return nil, errUnrecognizedTracker
 	}
 
 	switch trackerType {
 	case API:
-		behavior = NewAPITrackerBehavior(bot)
+		behavior = NewAPITrackerBehavior(messenger)
 	case Scraper:
-		behavior = NewScraperTrackerBehavior(bot)
+		behavior = NewScraperTrackerBehavior(messenger)
 	default:
 		return nil, fmt.Errorf("unsupported client type for code: %s", code)
 	}
@@ -78,89 +85,137 @@ func CreateTracker(bot *tgbotapi.BotAPI, code string, runInterval time.Duration,
 		}
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-
 	return &Tracker{
 		Code:        code,
-		Ticker:      time.NewTicker(runIntervalToUse),
 		trackerData: trackerData,
-		Context:     ctx,
-		Cancel:      cancel,
 		Behavior:    behavior,
 		chatID:      chatID,
-		bot:         bot,
+		messenger:   messenger,
 		errorLimit:  config.ErrorNotifyLimit,
-		Status: TrackerStatus{
+		status: TrackerStatus{
 			CurrentInterval: runIntervalToUse,
 		},
 	}, nil
 }
 
+// Status returns a copy of the tracker status that is safe to read while the tracker keeps running.
+func (t *Tracker) Status() TrackerStatus {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	status := t.status
+	status.ExecutionErrors = append([]*TrackerExecutionError(nil), t.status.ExecutionErrors...)
+
+	return status
+}
+
+func (t *Tracker) ChatID() int64 {
+	return t.chatID
+}
+
 func (t *Tracker) executeTrackerLogic() {
-	t.Status.LastRunTimestamp = time.Now()
-	t.Status.TotalRuns++
-
-	if value, err := t.Behavior.Execute(t.trackerData, t.chatID); err != nil {
-		log.Printf("[Tracker] Error executing tracker '%s': %s", t.Code, err)
-		t.Status.ExecutionErrors = append(t.Status.ExecutionErrors, &TrackerExecutionError{Error: err, Timestamp: time.Now()})
-
-		// Notify the user about error accumulation
-		if len(t.Status.ExecutionErrors) >= t.errorLimit {
-			notificationMessage := fmt.Sprintf("More than %d execution errors registered for tracker <b>%s</b>, you should probably take a look at the logs :(", t.errorLimit, t.Code)
-			helpers.SendMessageHTML(t.bot, t.chatID, notificationMessage, nil)
+	// A panic in a single run must not take down the whole bot
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[Tracker] Recovered from panic in tracker '%s': %v", t.Code, r)
+			t.recordError(fmt.Errorf("panic: %v", r))
 		}
-	} else {
-		t.Status.LastRecordedValue = value
+	}()
+
+	value, err := t.Behavior.Execute(t.trackerData, t.chatID)
+	if err != nil {
+		log.Printf("[Tracker] Error executing tracker '%s': %s", t.Code, err)
+		t.recordError(err)
+
+		return
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.status.LastRunTimestamp = time.Now()
+	t.status.TotalRuns++
+	t.status.ConsecutiveErrors = 0
+	t.status.LastRecordedValue = value
+}
+
+func (t *Tracker) recordError(err error) {
+	t.mu.Lock()
+	t.status.LastRunTimestamp = time.Now()
+	t.status.TotalRuns++
+	t.status.TotalErrors++
+	t.status.ConsecutiveErrors++
+	t.status.ExecutionErrors = append(t.status.ExecutionErrors, &TrackerExecutionError{Error: err, Timestamp: time.Now()})
+	if len(t.status.ExecutionErrors) > executionErrorHistory {
+		t.status.ExecutionErrors = t.status.ExecutionErrors[len(t.status.ExecutionErrors)-executionErrorHistory:]
+	}
+	// Notify only once when the limit is reached, not on every following failed run
+	notify := t.status.ConsecutiveErrors == t.errorLimit
+	t.mu.Unlock()
+
+	if notify {
+		notificationMessage := fmt.Sprintf("Tracker <b>%s</b> has failed %d times in a row, you should probably take a look at the logs :(", t.Code, t.errorLimit)
+		t.messenger.SendHTML(t.chatID, notificationMessage)
 	}
 }
 
 func (t *Tracker) Start() {
-	if t.running {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.cancel != nil {
 		return
 	}
 
-	// Recreate context for when the tracker is being restarted after interval update
-	if t.Context.Err() != nil {
-		t.Context, t.Cancel = context.WithCancel(context.Background())
-	} else {
-		t.Status.StartTimestamp = time.Now() // Set the start timestamp only when the tracker is started for the first time
+	if t.status.StartTimestamp.IsZero() {
+		t.status.StartTimestamp = time.Now() // Set the start timestamp only when the tracker is started for the first time
 	}
 
-	t.running = true
+	ctx, cancel := context.WithCancel(context.Background())
+	t.cancel = cancel
 
-	go func() {
-		defer func() { t.running = false }()
-
-		// Execute immediately on start
-		t.executeTrackerLogic()
-
-		for {
-			select {
-			case <-t.Ticker.C:
-				t.executeTrackerLogic()
-			case <-t.Context.Done():
-				log.Printf("[Tracker] Stopping tracker '%s'", t.Code)
-				return
-			}
-		}
-	}()
+	go t.run(ctx, t.status.CurrentInterval)
 }
 
+func (t *Tracker) run(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	// Execute immediately on start
+	t.executeTrackerLogic()
+
+	for {
+		select {
+		case <-ticker.C:
+			t.executeTrackerLogic()
+		case <-ctx.Done():
+			log.Printf("[Tracker] Stopping tracker '%s'", t.Code)
+			return
+		}
+	}
+}
+
+// Stop signals the tracker goroutine to exit. It does not wait for a run that is already in progress;
+// the clients are stateless, so a finishing run cannot interfere with a restarted tracker.
 func (t *Tracker) Stop() {
-	if !t.running {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.cancel == nil {
 		return
 	}
 
-	t.Ticker.Stop()
-	t.Cancel()
-	t.running = false
+	t.cancel()
+	t.cancel = nil
 }
 
 func (t *Tracker) UpdateInterval(newInterval time.Duration) {
 	t.Stop()
-	time.Sleep(1 * time.Second)
-	t.Ticker = time.NewTicker(newInterval)
-	t.Status.CurrentInterval = newInterval
+
+	t.mu.Lock()
+	t.status.CurrentInterval = newInterval
+	t.mu.Unlock()
+
 	t.Start()
 }
 
