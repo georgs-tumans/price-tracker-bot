@@ -24,6 +24,8 @@ jobs:
 
       - name: Install golangci-lint
         run: |
+          set -o pipefail
+
           VERSION=v2.13.2
           OS=$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')
           ARCH="${{ runner.arch }}"
