@@ -24,9 +24,22 @@ jobs:
 
       - name: Install golangci-lint
         run: |
-          curl -sSfL https://github.com/golangci/golangci-lint/releases/download/v2.13.2/golangci-lint-2.13.2-linux-amd64.tar.gz \
-            | tar -xz
-          install -m 0755 golangci-lint-2.13.2-linux-amd64/golangci-lint $(go env GOPATH)/bin/golangci-lint
+          VERSION=v2.13.2
+          OS=$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')
+          ARCH="${{ runner.arch }}"
+
+          case "$ARCH" in
+            X64) ARCH=amd64 ;;
+            ARM64) ARCH=arm64 ;;
+            *)
+              echo "Unsupported runner architecture: $ARCH"
+              exit 1
+              ;;
+          esac
+
+          ARCHIVE="golangci-lint-${VERSION#v}-${OS}-${ARCH}.tar.gz"
+          curl -sSfL "https://github.com/golangci/golangci-lint/releases/download/${VERSION}/${ARCHIVE}" | tar -xz
+          install -m 0755 "golangci-lint-${VERSION#v}-${OS}-${ARCH}/golangci-lint" "$(go env GOPATH)/bin/golangci-lint"
 
       - name: Run GolangCI-Lint
         run: |
