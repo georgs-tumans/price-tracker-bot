@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/go-playground/validator/v10"
@@ -91,7 +92,7 @@ func loadTrackers(fileVar string) ([]*Tracker, error) {
 	// Check if a file path is provided
 	filePath := os.Getenv(fileVar)
 	if filePath != "" {
-		data, err := os.ReadFile(filePath)
+		data, err := os.ReadFile(filepath.Clean(filePath))
 		if err != nil {
 			return nil, errors.New("failed to read tracker file")
 		}

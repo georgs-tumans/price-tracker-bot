@@ -1,52 +1,136 @@
-issues:
-  exclude-files:
-    - ".*_test\\.go$"
-  exclude:
-    - "the type name `ErrorResponse` should conform to the `XxxError` format"
-
-linters-settings:
-  gci:
-    custom-order: true
-    sections:
-      - standard
-      - default
-  nlreturn:
-    block-size: 2
-  misspell:
-    ignore-words:
-      - tiem # dublikātiem "misspelled" "time" as "tiem"
-
+version: "2"
 linters:
-  presets:
-    - comment
-    - format
-    - bugs
-    - performance
-    - unused
-    - test
-    - sql
-    - style
-
+  enable:
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - canonicalheader
+    - contextcheck
+    - copyloopvar
+    - decorder
+    - dogsled
+    - durationcheck
+    - errchkjson
+    - errname
+    - errorlint
+    - exptostd
+    - fatcontext
+    - forbidigo
+    - forcetypeassert
+    - ginkgolinter
+    - gocheckcompilerdirectives
+    - gochecksumtype
+    - goconst
+    - gocritic
+    - godot
+    - goheader
+    - gomoddirectives
+    - gomodguard_v2
+    - goprintffuncname
+    - gosec
+    - gosmopolitan
+    - grouper
+    - iface
+    - importas
+    - inamedparam
+    - intrange
+    - loggercheck
+    - makezero
+    - mirror
+    - misspell
+    - mnd
+    - musttag
+    - nakedret
+    - nilerr
+    - nilnesserr
+    - nlreturn
+    - noctx
+    - nolintlint
+    - nonamedreturns
+    - nosprintfhostport
+    - paralleltest
+    - perfsprint
+    - prealloc
+    - predeclared
+    - promlinter
+    - protogetter
+    - reassign
+    - recvcheck
+    - revive
+    - rowserrcheck
+    - sloglint
+    - spancheck
+    - sqlclosecheck
+    - staticcheck
+    - testableexamples
+    - testifylint
+    - testpackage
+    - thelper
+    - tparallel
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - usetesting
+    - wastedassign
+    - whitespace
+    - zerologlint
   disable:
-    - godox
-    - tagalign
+    - containedctx
+    - depguard
+    - dupl
+    - dupword
+    - err113
     - exhaustive
     - exhaustruct
-    - depguard
-    - wrapcheck
-    - gochecknoinits
-    - varnamelen
     - funlen
-    - ireturn
-    - interfacebloat
     - gochecknoglobals
-    - goerr113 
+    - gochecknoinits
+    - godox
+    - interfacebloat
+    - ireturn
     - lll
     - nilnil
-    - containedctx
-    - wsl # conflicts with gofumpt, and gofumpt is better
-    - gofumpt
-    - goimports 
-    - dupword # does not play nice with openapi generator
-    - dupl
+    - tagalign
     - tagliatelle
+    - varnamelen
+    - wrapcheck
+    - wsl
+  settings:
+    misspell:
+      ignore-rules:
+        - tiem
+    nlreturn:
+      block-size: 2
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - path: (.+)\.go$
+        text: the type name `ErrorResponse` should conform to the `XxxError` format
+    paths:
+      - .*_test\.go$
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gci
+    - gofmt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+      custom-order: true
+  exclusions:
+    generated: lax
+    paths:
+      - .*_test\.go$
+      - third_party$
+      - builtin$
+      - examples$

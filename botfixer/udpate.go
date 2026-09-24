@@ -35,10 +35,12 @@ func (b *BotFixer) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	// This is REQUIRED by Telegram Bot API for webhooks - without it, updates stop after a few days
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"ok":     true,
 		"result": update.UpdateID,
-	})
+	}); err != nil {
+		log.Printf("[Bot fixer] Error encoding webhook response: %v", err)
+	}
 }
 
 func (b *BotFixer) longPollingHandler(ctx context.Context, updates tgbotapi.UpdatesChannel) {
