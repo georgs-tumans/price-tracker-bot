@@ -1,0 +1,13 @@
+# Keep secrets and files the build doesn't need out of the build context
+.env
+.env.*
+.git
+.github
+.vscode
+deployment
+data
+**/*.md
+**/*_test.go
+.golangci.yml
+.editorconfig
+todo.txt

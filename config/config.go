@@ -108,7 +108,7 @@ func loadTrackers(fileVar string) ([]*Tracker, error) {
 	// Check if a file path is provided
 	filePath := os.Getenv(fileVar)
 	if filePath != "" {
-		data, err := os.ReadFile(filePath)
+		data, err := os.ReadFile(filePath) //nolint:gosec // The path comes from the bot's own configuration
 		if err != nil {
 			return nil, errors.New("failed to read tracker file")
 		}

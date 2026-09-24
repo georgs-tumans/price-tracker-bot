@@ -12,11 +12,13 @@ import (
 )
 
 const (
-	// How long Telegram holds a getUpdates request open while waiting for new updates
+	// How long Telegram holds a getUpdates request open while waiting for new updates.
 	pollTimeoutSeconds = 60
+	// Extra time on top of the poll timeout before the HTTP client gives up on a request.
+	pollTimeoutMarginSeconds = 30
 	// Must be longer than the poll timeout, otherwise every idle poll would time out. Without any timeout,
 	// a request on a silently dropped connection would hang forever and the bot would stop receiving updates.
-	httpClientTimeout = (pollTimeoutSeconds + 30) * time.Second
+	httpClientTimeout = (pollTimeoutSeconds + pollTimeoutMarginSeconds) * time.Second
 )
 
 type BotFixer struct {
@@ -52,7 +54,8 @@ func (b *BotFixer) Run(ctx context.Context) {
 		log.Printf("[Bot fixer] Error deleting webhook: %v", err)
 	}
 
-	b.CommandHandler.ResumeTrackers()
+	// Trackers run until they are stopped explicitly, independent of this context
+	b.CommandHandler.ResumeTrackers() //nolint:contextcheck
 
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = pollTimeoutSeconds

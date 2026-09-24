@@ -18,7 +18,7 @@ const (
 	API     = "api"
 	Scraper = "scraper"
 
-	// How many of the most recent execution errors are kept for a tracker
+	// How many of the most recent execution errors are kept for a tracker.
 	executionErrorHistory = 20
 )
 

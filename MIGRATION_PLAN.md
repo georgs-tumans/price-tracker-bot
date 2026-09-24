@@ -35,11 +35,26 @@ The bot does its job but has three kinds of problems. They're listed in the orde
 - [x] Smaller items from 6.3/6.4: sentinel error instead of comparing the misspelled string, redundant `Stop()` / `Start()` around `UpdateInterval` removed, `ERROR_NOTIFY_LIMIT` parse errors now fail startup, `udpate.go` renamed to `update.go`.
 - [x] Tests for the tracker lifecycle, error history, panic recovery and state file; `go test -race` passes (run in a `golang:1.27` container).
 - 2.4 (409 logging): no code change needed. The current library already logs Telegram's own message ("Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"). Phase 4 routes it through `WithErrorsHandler`.
-- 2.7 heartbeat `HEALTHCHECK`: deferred. With the scratch image (3.4) it needs a `-healthcheck` flag in the binary; decide during Phase 2.
+- 2.7 heartbeat `HEALTHCHECK`: **dropped.** With the scratch image it would need a `-healthcheck` flag in the binary, and the current library doesn't report successful polls, so the heartbeat could only track incoming updates, which are rare for this bot. The client timeouts already turn a hung poll into a retry. Revisit after Phase 4 if needed.
+
+**Phase 2 (done):**
+- [x] Scratch Dockerfile (3.4): static binary (`CGO_ENABLED=0`, `-trimpath`, `-s -w`), embedded time zone data, CA certificates copied from the build stage, UID 65532, `/data` owned by that user, module download cached separately from the source with BuildKit cache mounts, `TZ`/`STATE_FILE` defaults. Checked with a fake token: TLS to Telegram works ("Unauthorized", not a certificate error), `TZ=Europe/Riga` is applied, and a new volume is owned by 65532. Image content went from ~30 MB to ~14 MB.
+- [x] `.dockerignore`: `.env`, `.git` etc. no longer go into the build context.
+- [x] Compose hardening: `read_only`, `cap_drop: ALL`, `no-new-privileges`.
+- [x] golangci-lint config migrated to v2 (`gomodguard` → `gomodguard_v2`); the 11 real findings fixed (the other 3 were a Windows line-ending artifact). Lint is clean with v2.13.2.
+- [x] Lint workflow: `golangci/golangci-lint-action@v9` pinned to v2.13.2, `go-version-file: go.mod`, and it runs `go test -race` too.
+- [x] `.github/workflows/deploy.yml` deleted.
+- [x] README: scratch image notes, lint/test instructions (including running golangci-lint through Docker when the local binary is too old).
+
+**Left for you (repository settings, not code):**
+- Remove the `SERVER_IP`, `SERVER_USER` and `SSH_PRIVATE_KEY` secrets on GitHub.
+- Delete the stale remote branches (`deploy_v4`, `deploy_v5`, `deploy_6`, the two dependabot branches) if you agree.
+
+**Expected CI state:** the Trivy workflow will probably fail until Phase 3, because it now scans the Go modules in the binary and `golang.org/x/net` / `x/crypto` are old versions with known HIGH vulnerabilities.
 
 **Not yet verified against real Telegram.** Needs a run with the dev bot (see the checklist in section 7).
 
-Next: Phase 2 (toolchain/CI, scratch Dockerfile, deleting `deploy.yml`).
+Next: Phase 3 (in-place dependency updates).
 
 | Phase | What | Effort | Can ship on its own |
 |---|---|---|---|

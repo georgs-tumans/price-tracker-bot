@@ -15,6 +15,11 @@ import (
 	"pricetrackerbot/helpers"
 )
 
+const (
+	stateDirPermissions  = 0o700
+	stateFilePermissions = 0o600
+)
+
 // savedTracker is the persisted form of a running tracker, used to resume trackers after a restart.
 type savedTracker struct {
 	Code     string `json:"code"`
@@ -48,12 +53,12 @@ func writeStateFile(path string, saved []savedTracker) error {
 		return err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), stateDirPermissions); err != nil {
 		return err
 	}
 
 	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+	if err := os.WriteFile(tmpPath, data, stateFilePermissions); err != nil {
 		return err
 	}
 

@@ -86,6 +86,8 @@ Follow the logs with `docker logs -f price_tracker_bot`.
 
 The tracker state lives in the `bot-data` Docker volume, so it survives rebuilds. `stop.sh` keeps it; `docker compose down -v` would delete it.
 
+The image is built `FROM scratch`: it contains only the bot binary, the trusted root certificates for HTTPS and the tracker configs. The bot runs as an unprivileged user (UID 65532) with a read-only filesystem; the `/data` volume is the only writable place. There is no shell in the container, so use `docker logs` for troubleshooting and `docker cp price_tracker_bot:/data/state.json .` to look at the saved state.
+
 The scripts can be run from any directory. The first time `start.sh` runs, it removes a leftover `price_tracker_bot` container created by the old `docker run` scripts, if there is one.
 
 
@@ -107,10 +109,16 @@ Press `F5` in VS Code (launch profile included) or run `go run .` in the project
 
 To run it in a container locally instead: `docker compose -f deployment/docker-compose.yml up --build`.
 
-### Linting
+### Linting and tests
 
-A golangci-lint configuration file is included, some useful commands to run in git bash:
+The project uses golangci-lint v2 (config in [.golangci.yml](/.golangci.yml)); CI runs it together with `go test -race ./...` on pushes and pull requests to `develop`.
 
-
- - Export lint result to a file: `golangci-lint run --out-format json > lint-results.json`
+ - Run lint: `golangci-lint run`
  - Run lint and fix issues where possible: `golangci-lint run --fix`
+ - Run tests: `go test ./...`
+
+golangci-lint must be built with a Go version at least as new as the one in `go.mod`. If your local binary is older, run it through Docker instead:
+
+```bash
+docker run --rm -v "$(pwd):/src" -w /src golangci/golangci-lint:v2.13.2 golangci-lint run
+```

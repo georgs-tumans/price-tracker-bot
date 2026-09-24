@@ -15,6 +15,8 @@ import (
 )
 
 const (
+	trackerCodeParam = "tracker_code"
+
 	generalType = "general"
 	trackerType = "tracker"
 	bothType    = "both"
@@ -50,11 +52,11 @@ func NewCommandHandler(bot *tgbotapi.BotAPI) *CommandHandler {
 	}
 
 	ch.commandMap = map[string]*Command{
-		"start":    {Type: generalType, DescriptionGeneral: "Bot start command", Handler: ch.handleHelp, Hidden: true, Params: []string{"tracker_code"}},
-		"run":      {Type: bothType, DescriptionTracker: "Run a tracker", DescriptionGeneral: "Run all available trackers", Handler: ch.handleStart, Hidden: false, Params: []string{"tracker_code"}},
-		"stop":     {Type: bothType, DescriptionTracker: "Stop a tracker", DescriptionGeneral: "Stop all running trackers", Handler: ch.handleStop, Hidden: false, Params: []string{"tracker_code"}},
-		"interval": {Type: trackerType, DescriptionTracker: "Change the tracker run interval", Handler: ch.handleSetInterval, Hidden: false, Params: []string{"tracker_code", "interval*"}},
-		"status":   {Type: bothType, DescriptionTracker: "View a particular tracker status", DescriptionGeneral: "View status of all available trackers", Handler: ch.handleStatus, Hidden: false, Params: []string{"tracker_code"}},
+		"start":    {Type: generalType, DescriptionGeneral: "Bot start command", Handler: ch.handleHelp, Hidden: true, Params: []string{trackerCodeParam}},
+		"run":      {Type: bothType, DescriptionTracker: "Run a tracker", DescriptionGeneral: "Run all available trackers", Handler: ch.handleStart, Hidden: false, Params: []string{trackerCodeParam}},
+		"stop":     {Type: bothType, DescriptionTracker: "Stop a tracker", DescriptionGeneral: "Stop all running trackers", Handler: ch.handleStop, Hidden: false, Params: []string{trackerCodeParam}},
+		"interval": {Type: trackerType, DescriptionTracker: "Change the tracker run interval", Handler: ch.handleSetInterval, Hidden: false, Params: []string{trackerCodeParam, "interval*"}},
+		"status":   {Type: bothType, DescriptionTracker: "View a particular tracker status", DescriptionGeneral: "View status of all available trackers", Handler: ch.handleStatus, Hidden: false, Params: []string{trackerCodeParam}},
 		"help":     {Type: generalType, DescriptionGeneral: "View all available commands", Handler: ch.handleHelp, Hidden: false},
 	}
 
@@ -183,7 +185,7 @@ func (ch *CommandHandler) startAllTrackers(chatID int64) {
 		var builder strings.Builder
 		builder.WriteString("Failed to start the following trackers:\n")
 		for code, err := range errors {
-			builder.WriteString(fmt.Sprintf(" - %s: %s\n", code, err.Error()))
+			fmt.Fprintf(&builder, " - %s: %s\n", code, err.Error())
 		}
 
 		ch.handleCommandMessage(chatID, builder.String(), nil)
@@ -317,12 +319,12 @@ func (ch *CommandHandler) handleStatus(code string, chatID int64, _ *string) err
 		builder.WriteString("<b>All available trackers</b>\n\n")
 		for _, tracker := range ch.config.APITrackers {
 			activeStatus := ch.processTrackerStatus(tracker, statusMenu)
-			builder.WriteString(fmt.Sprintf(" - %s | %s | api\n", tracker.Code, activeStatus))
+			fmt.Fprintf(&builder, " - %s | %s | api\n", tracker.Code, activeStatus)
 		}
 
 		for _, tracker := range ch.config.ScraperTrackers {
 			activeStatus := ch.processTrackerStatus(tracker, statusMenu)
-			builder.WriteString(fmt.Sprintf(" - %s | %s | scraper\n", tracker.Code, activeStatus))
+			fmt.Fprintf(&builder, " - %s | %s | scraper\n", tracker.Code, activeStatus)
 		}
 
 		// If we are navigating back to the status menu after a back button click, edit the existing message instead of sending a new one.
@@ -364,7 +366,7 @@ func (ch *CommandHandler) handleStatus(code string, chatID int64, _ *string) err
 	}
 
 	var builder strings.Builder
-	builder.WriteString(fmt.Sprintf("<b>Status for tracker %s</b>\n\n", code))
+	fmt.Fprintf(&builder, "<b>Status for tracker %s</b>\n\n", code)
 	builder.WriteString("Status: active\n")
 	builder.WriteString("Tracker started: " + status.StartTimestamp.Format("02.01.2006 15:04") + "\n")
 	builder.WriteString("Last run: " + lastRun + "\n")
@@ -403,7 +405,7 @@ func (ch *CommandHandler) handleHelp(code string, chatID int64, _ *string) error
 
 	for command, cmd := range ch.commandMap {
 		if !cmd.Hidden && (cmd.Type == generalType || cmd.Type == bothType) {
-			builder.WriteString(fmt.Sprintf(" - /%s - %s\n", command, cmd.DescriptionGeneral))
+			fmt.Fprintf(&builder, " - /%s - %s\n", command, cmd.DescriptionGeneral)
 		}
 	}
 
