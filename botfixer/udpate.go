@@ -44,7 +44,7 @@ func (b *BotFixer) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		log.Printf("[Bot fixer] Error encoding webhook response: %v", err)
+		log.Printf("[Bot fixer] Error encoding webhook response for update %d: %v", update.UpdateID, err)
 	}
 }
 

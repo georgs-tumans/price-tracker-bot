@@ -24,7 +24,7 @@ jobs:
 
       - name: Install golangci-lint
         run: |
-          set -o pipefail
+          set -euo pipefail
 
           VERSION=v2.13.2
           OS=$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')
