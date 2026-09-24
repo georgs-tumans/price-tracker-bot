@@ -15,8 +15,9 @@ This document explains what was changed in the 2026 maintenance round, why, and 
 4. [What changed](#4-what-changed)
 5. [Configuration changes](#5-configuration-changes)
 6. [Decisions and things left out](#6-decisions-and-things-left-out)
-7. [Updating dependencies in the future](#7-updating-dependencies-in-the-future)
-8. [Commit history](#8-commit-history)
+7. [Open items](#7-open-items)
+8. [Updating dependencies in the future](#8-updating-dependencies-in-the-future)
+9. [Commit history](#9-commit-history)
 
 ---
 
@@ -28,7 +29,7 @@ The bot was written a couple of years ago and had three kinds of problems:
 - **The build and deploy setup was out of date:** the Docker image and CI used an older Go than `go.mod`, the linter config was for an old golangci-lint version, and a deploy workflow still targeted a Hetzner server that's no longer used.
 - **Dependencies were old.** The Telegram library hadn't had a release since December 2021, and the Docker image had 19 known high-severity vulnerabilities in its Go packages.
 
-All of this is fixed. The biggest changes at a glance:
+All of this is fixed; the few things still open are listed in [section 7](#7-open-items). The biggest changes at a glance:
 
 | Area | Before | After |
 |---|---|---|
@@ -53,6 +54,8 @@ These steps can't be done from the code. Do them in order and tick them off.
 
 - [ ] **Create a dev bot.** In Telegram, message [@BotFather](https://t.me/BotFather), send `/newbot`, and pick a name and username (e.g. `Price Tracker (dev)` / `my_price_tracker_dev_bot`). Put its API key in your **local** `.env` as `BOT_API_KEY`. From now on, the production key only lives in the server's `.env`. ([Why](#running-locally-next-to-production))
 - [ ] **Test locally with the dev bot** (`go run .` or F5): every command and button, "<< Return" after restarting the bot, the interval change, and a tracker being resumed after a restart (you should get a "the bot was restarted" message).
+- [ ] **Run the dev bot while production is running** (once the new version is deployed, or next to the old one) and check that neither log shows `Conflict` errors and each bot only answers its own chat.
+- [ ] *(Optional)* **Run a local session with the race detector** for about an hour, with a tracker on a 1-minute interval, clicking through the menus: `go run -race .`. It reports any unsafe concurrent access the automated tests didn't hit. On Windows the race detector needs a C compiler (e.g. via MSYS2), so it's easier on the Ubuntu server or in WSL.
 - [ ] **Run each of your real trackers once** with the dev bot (copy the real `tracker_configs/*.json` from the server) and compare the values with what the production bot showed. The scraping library upgrade is covered by tests, but only with sample HTML.
 - [ ] **Update your local golangci-lint.** The installed one was built with Go 1.26 and can't lint Go 1.27 code:
   ```bash
@@ -87,6 +90,7 @@ These steps can't be done from the code. Do them in order and tick them off.
 - [ ] **Start your trackers once** with `/run` (or `/run <code>`). The old version never saved which trackers were running, so there's nothing to resume on the first start. From then on they're resumed automatically.
 - [ ] **Remove anything that only existed for webhooks:** a port forward to 7080 on your router, an ngrok agent, a Cloudflare tunnel or reverse proxy entry for the bot, a DDNS entry.
 - [ ] **Resilience checks:** `docker kill price_tracker_bot` (it should come back by itself and resume trackers), reboot the server, and unplug the network for a few minutes (the bot should answer again afterwards without a restart).
+- [ ] **Timeout check** (can be done locally with the dev bot): point a test API tracker at an address that accepts connections but never answers, e.g. run `nc -l 9999` and use `http://localhost:9999` as its `dataUrl`. Within about 20 seconds the log should show a timeout error, and the tracker should try again at its next interval instead of hanging.
 
 ### On GitHub
 
@@ -235,11 +239,23 @@ Run them with `go test ./...`.
 - **`scratch` instead of `alpine` or distroless.** The smallest image, and it matches the setup used at work. The trade-off is no shell for debugging.
 - **No Docker health check.** It would need a heartbeat that the Telegram library can't provide well, and the timeouts already turn a hung connection into a retry.
 - **Non-root container, not rootless Docker.** Running the Docker daemon itself rootless is a host-level setup and wasn't needed.
+- **Stopping a tracker doesn't wait for a run in progress.** The original plan had `Stop()` wait for the tracker to finish, but that could block a command for up to 20 seconds while a scrape finishes. Since the API and scraper clients no longer keep any state between runs, a run that finishes after `Stop()` can't interfere with a restarted tracker; at worst it sends one last notification.
+- **`STATE_FILE` defaults to `data/state.json`** (relative, for local runs) rather than `/data/state.json` as first planned. The Docker image sets `/data/state.json` itself, so both cases work without configuration.
 - **Not yet tested against real Telegram.** Everything was tested against a fake Telegram server, and the Docker image was checked against the real API with a fake token. The dev bot test in the to-do list is the final check.
 
 ---
 
-## 7. Updating dependencies in the future
+## 7. Open items
+
+Planned but not done yet:
+
+- [ ] **Unit tests for the small helpers:** `utilities.ParseDurationWithDays` (including day intervals like `2d` and invalid input), `utilities.DurationToString` and `helpers.CompareNumbers` (every operator, and an invalid one). They're currently only exercised indirectly through the client and end-to-end tests; day intervals aren't covered at all.
+- [ ] **Race detector on an interactive session** (`go run -race .`): the automated tests run with `-race`, but a real session wasn't done. Listed in the to-do section as optional.
+- [ ] **Verification against the real Telegram API and your real trackers:** see the to-do section. Everything else was verified with automated tests, a fake Telegram server and a Docker smoke test.
+
+---
+
+## 8. Updating dependencies in the future
 
 `go get -u ./...` upgrades every dependency, including indirect ones, beyond the versions their parent libraries were tested with. During this migration it moved `gobwas/glob` to v1.0.0, which broke colly, and it had to be pinned back to v0.2.3. Safer:
 
@@ -257,7 +273,7 @@ Then check for known vulnerabilities with `go run golang.org/x/vuln/cmd/govulnch
 
 ---
 
-## 8. Commit history
+## 9. Commit history
 
 | Commit | Content |
 |---|---|
