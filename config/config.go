@@ -3,9 +3,12 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"os"
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/joho/godotenv"
@@ -31,6 +34,7 @@ type Configuration struct {
 	Port             string     `validate:"omitempty,numeric"`
 	Environment      string     `validate:"required"`
 	ErrorNotifyLimit int        `validate:"omitempty,numeric"`
+	AllowedChatIDs   []int64
 	APITrackers      []*Tracker `validate:"dive"`
 	ScraperTrackers  []*Tracker `validate:"dive"`
 }
@@ -58,6 +62,15 @@ func GetConfig() *Configuration {
 			config.ErrorNotifyLimit = converted
 		} else {
 			config.ErrorNotifyLimit = 3
+		}
+
+		config.AllowedChatIDs, err = parseChatIDs(os.Getenv("ALLOWED_CHAT_IDS"))
+		if err != nil {
+			log.Fatalf("[GetConfig] Error parsing ALLOWED_CHAT_IDS: %v", err)
+		}
+
+		if len(config.AllowedChatIDs) == 0 {
+			log.Println("[GetConfig] WARNING: ALLOWED_CHAT_IDS is not set; the bot will accept commands from any chat")
 		}
 
 		config.APITrackers, err = loadTrackers("API_TRACKERS_FILE")
@@ -105,6 +118,36 @@ func loadTrackers(fileVar string) ([]*Tracker, error) {
 	}
 
 	return nil, nil
+}
+
+// Parses a comma separated list of Telegram chat IDs, e.g. "12345678,-100987654321".
+func parseChatIDs(value string) ([]int64, error) {
+	var chatIDs []int64
+
+	for _, part := range strings.Split(value, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		chatID, err := strconv.ParseInt(part, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid chat ID '%s'", part)
+		}
+
+		chatIDs = append(chatIDs, chatID)
+	}
+
+	return chatIDs, nil
+}
+
+// Whether the bot should respond to the given chat. If no allowed chats are configured, all chats are allowed.
+func (c *Configuration) IsChatAllowed(chatID int64) bool {
+	if len(c.AllowedChatIDs) == 0 {
+		return true
+	}
+
+	return slices.Contains(c.AllowedChatIDs, chatID)
 }
 
 func (c *Configuration) ValidateConfig() {

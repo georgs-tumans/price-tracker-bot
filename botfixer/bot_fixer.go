@@ -9,7 +9,6 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"pricetrackerbot/config"
 	"pricetrackerbot/handlers"
-	"pricetrackerbot/services"
 )
 
 const webhookEndpoint = "/webhook"
@@ -19,13 +18,11 @@ type BotFixer struct {
 	Config            *config.Configuration
 	BondsClientActive bool
 	CommandHandler    *handlers.CommandHandler
-	TelegramBotAPI    string
 }
 
 func NewBotFixer() *BotFixer {
 	botFixer := &BotFixer{
-		Config:         config.GetConfig(),
-		TelegramBotAPI: "https://api.telegram.org/bot",
+		Config: config.GetConfig(),
 	}
 
 	var err error
@@ -96,8 +93,8 @@ func (b *BotFixer) InitializeBotWebhook() {
 }
 
 func (b *BotFixer) DeleteWebhook() error {
-	url := b.TelegramBotAPI + b.Config.BotAPIKey + "/deleteWebhook"
-	_, err := services.GetRequest(url)
+	// Done through the library so the bot token never ends up in a logged request URL
+	_, err := b.Bot.Request(tgbotapi.DeleteWebhookConfig{})
 	if err != nil {
 		log.Fatalf("[Bot fixer] Error deleting webhook: %v", err)
 		return err

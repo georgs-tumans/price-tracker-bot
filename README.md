@@ -31,9 +31,10 @@ General commands:
 ## Preconditions
 
 - A Telegram bot API key which means you must register a bot. Learn how to do it [here](https://core.telegram.org/bots#how-do-i-create-a-bot).
-- Docker installed (if you want to run this in a container)
-- GO installed (if you want to run it as a regular console app)
-- ngrok running for local development (if using the webhooks approach)
+- **A second bot for local development** (see [Running locally while the server copy is running](#running-locally-while-the-server-copy-is-running)).
+- Docker with the compose plugin (for running on a server)
+- Go installed (for running it locally as a regular console app)
+- ngrok running for local development (only if testing the webhooks approach)
 
 ## Use
 
@@ -42,52 +43,76 @@ General commands:
 3. Use commands to interact with your new Telegram bot :)
 
 
-## Initial setup
+## Configuration
 
-### The default approach
+Create an `.env` file in the project root; use this [example](/.env.example) to fill out the values. Tracker configuration files are described [here](/tracker_configs/README.md).
 
-The default approach is when the bot determines whether to initialize with webhooks or long polling based on the value of the `ENVIROMENT` environment variable (see the Development section) upon starting.
+### Restricting who can use the bot
 
-In case of local development follow these steps:
+By default the bot responds to anyone on Telegram who finds it. To limit it to your own chats, set `ALLOWED_CHAT_IDS` to a comma separated list of chat IDs:
 
-1. Create an `.env` file; use this [example](/.env.example) to fill out the values.
+```
+ALLOWED_CHAT_IDS=12345678,87654321
+```
 
-2. Use [this](/deployment/docker_build_and_run.ps1) included powershell script to build (or rebuild) and run the bot as a Docker container.
+Updates from any other chat are ignored and logged as `Ignoring update from chat <id> (not in ALLOWED_CHAT_IDS)`. The bot logs a warning on startup when the variable is empty.
 
-Afterwards you can use [this other script](/deployment/docker_run.ps1) to run the container without rebuilding the image.
-
-Also, you can press `F5` if using VS Code to run via a launch profile or just use the CMD command `go run main.go` in the root of the project.
-
-In other cases, see below.
+To find your chat ID, set `ALLOWED_CHAT_IDS` to any placeholder value (e.g. `0`), send the bot a message and read the ID from that log line. For group chats the ID is negative.
 
 
-### Using the webhooks approach (for testing/modifying webhook initialization)
+## Deployment (Linux server, Docker Compose)
 
-1. Run ngrok locally - you will need it for exposing localhost to the internet so that Telegram can reach the bot when running locally (during development). 
+The bot runs as a Docker Compose service defined in [deployment/docker-compose.yml](/deployment/docker-compose.yml). The container restarts automatically after crashes and server reboots (`restart: unless-stopped`), as long as the Docker service itself starts on boot (`sudo systemctl enable docker`).
 
-There is a [powershell script](/deployment/docker_run_ngrok.ps1) for hassle free setup of ngrok via Docker but in order to use it:
+Deploying a new version:
 
-* Create an ngrok configuration file `ngrok.yml` based on this [template](./ngrok.yml.example)
-* Edit the [script](/docker_run_ngrok.ps1) and set the location of the newly created `ngrok.yml`
-* Run the script
+```bash
+git pull
+./deployment/start.sh
+```
 
-You will need to know the ngrok generated URL that tunnels your locally run app to the internet - open `http://localhost:4040/status` in a browser to view the ngrok panel
+[start.sh](/deployment/start.sh) rebuilds the image from the current code and (re)starts the container in the background. [stop.sh](/deployment/stop.sh) stops and removes the container:
 
-2. Create an `.env` file; use this [example](/.env.example) to fill out the values.
+```bash
+./deployment/stop.sh
+```
 
-3. Use [this](/docker_build_and_run.ps1) included powershell script to build (or rebuild) and run the bot as a Docker container.
+Follow the logs with `docker logs -f price_tracker_bot`.
 
-Afterwards you can use [this other script](/docker_run.ps1) to run the container without rebuilding the image.
+The scripts can be run from any directory. The first time `start.sh` runs, it removes a leftover `price_tracker_bot` container created by the old `docker run` scripts, if there is one.
 
 
 ## Development
 
-In order to develop and run the bot locally via you IDE you must set the environmental variable `ENVIROMENT` to `local`. When running the bot, this will result in automatic deletion of any webhooks registered for the given Telegram bot API key and switching to the long polling approach which works much better for local development.
+### Running locally while the server copy is running
 
-However, if you need to run the bot in a container or host it somewhere, it is recommended to set the `ENVIROMENT` to `cloud`/`docker` which will the register a new webhook upon instantiation and use that for getting updates.
+Telegram only lets **one running copy of a bot receive updates**. If you start the bot locally with the same bot API key the server uses, the two copies fight over it: commands randomly reach one copy or the other, each copy's trackers send their own notifications, and running locally in the `local` mode also deletes the webhook the server copy relies on.
 
-**NB**:
-You cannot run the bot in the long polling mode while there are actively registered webhooks for the same bot API key!
+The fix is to use a separate bot for development:
+
+1. Message [@BotFather](https://t.me/BotFather) on Telegram, send `/newbot` and pick a name and username, e.g. `My Price Tracker (dev)` / `my_price_tracker_dev_bot`.
+2. Put the new bot's API key in your **local** `.env` as `BOT_API_KEY`. Keep the production key only in the server's `.env`.
+3. Chat with the dev bot while developing. Both copies can then run at the same time without interfering with each other.
+
+### Running locally
+
+Set `ENVIRONMENT` to `local` in your `.env`. On startup this deletes any webhook registered for the bot API key and uses the long polling approach, which needs no public URL. Then press `F5` in VS Code (launch profile included) or run `go run .` in the project root.
+
+If you need to run it in a container locally, `docker compose -f deployment/docker-compose.yml up --build` works the same way as on the server.
+
+**NB**: long polling does not work while a webhook is registered for the same bot API key. The `local` mode deletes it automatically on startup.
+
+### Using the webhooks approach (for testing/modifying webhook initialization)
+
+With `ENVIRONMENT` set to anything other than `local` (e.g. `cloud`/`docker`), the bot registers a webhook at `WEBHOOK_URL` on startup and receives updates through it. Telegram must be able to reach that URL over HTTPS.
+
+For local testing, expose the bot with ngrok:
+
+* Create an ngrok configuration file `ngrok.yml` based on this [template](./ngrok.yml.example)
+* Edit the [script](/deployment/docker_run_ngrok.ps1) and set the location of the newly created `ngrok.yml`
+* Run the script
+
+Open `http://localhost:4040/status` to see the ngrok generated URL, put it in `WEBHOOK_URL` and start the bot.
 
 ### Linting
 
@@ -96,10 +121,3 @@ A golangci-lint configuration file is included, some useful commands to run in g
 
  - Export lint result to a file: `golangci-lint run --out-format json > lint-results.json`
  - Run lint and fix issues where possible: `golangci-lint run --fix`
-
-
-## Deployment
-
-Use [this bash script](/deployment/build-and-run-docker.sh) to build and run project as a docker container when using Linux:
-
-Navigate to the /deployment folder and run `./build-and-run-docker.sh`

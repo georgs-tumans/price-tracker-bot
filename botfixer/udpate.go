@@ -56,6 +56,14 @@ func (b *BotFixer) longPollingHandler(ctx context.Context, updates tgbotapi.Upda
 }
 
 func (b *BotFixer) handleUpdate(update tgbotapi.Update) {
+	if chat := updateChat(update); chat == nil || !b.Config.IsChatAllowed(chat.ID) {
+		if chat != nil {
+			log.Printf("[Bot fixer] Ignoring update from chat %d (not in ALLOWED_CHAT_IDS)", chat.ID)
+		}
+
+		return
+	}
+
 	switch {
 	// Handle messages
 	case update.Message != nil:
@@ -64,6 +72,19 @@ func (b *BotFixer) handleUpdate(update tgbotapi.Update) {
 	// Handle button clicks
 	case update.CallbackQuery != nil:
 		b.handleButton(update.CallbackQuery)
+	}
+}
+
+// Returns the chat an update belongs to. Unlike tgbotapi's Update.FromChat() it does not panic
+// on callback queries that have no message attached (e.g. from inline mode).
+func updateChat(update tgbotapi.Update) *tgbotapi.Chat {
+	switch {
+	case update.Message != nil:
+		return update.Message.Chat
+	case update.CallbackQuery != nil && update.CallbackQuery.Message != nil:
+		return update.CallbackQuery.Message.Chat
+	default:
+		return nil
 	}
 }
 
