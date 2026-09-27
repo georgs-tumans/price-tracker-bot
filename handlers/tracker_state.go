@@ -23,6 +23,8 @@ type savedTracker struct {
 	Code     string `json:"code"`
 	ChatID   int64  `json:"chatId"`
 	Interval string `json:"interval"` // time.Duration string, e.g. "1h0m0s"
+
+	NotificationsPaused bool `json:"notificationsPaused,omitempty"`
 }
 
 // saveState writes the currently running trackers to the state file. Errors are logged, not returned:
@@ -31,10 +33,12 @@ func (ch *CommandHandler) saveState() {
 	ch.mu.Lock()
 	saved := make([]savedTracker, 0, len(ch.runningTrackers))
 	for _, tracker := range ch.runningTrackers {
+		status := tracker.Status()
 		saved = append(saved, savedTracker{
-			Code:     tracker.Code,
-			ChatID:   tracker.ChatID(),
-			Interval: tracker.Status().CurrentInterval.String(),
+			Code:                tracker.Code,
+			ChatID:              tracker.ChatID(),
+			Interval:            status.CurrentInterval.String(),
+			NotificationsPaused: status.NotificationsPaused,
 		})
 	}
 	ch.mu.Unlock()
@@ -114,6 +118,7 @@ func (ch *CommandHandler) ResumeTrackers() {
 			continue
 		}
 
+		tracker.SetNotificationsPaused(s.NotificationsPaused)
 		ch.AddRunningTracker(tracker)
 		tracker.Start()
 		resumedPerChat[s.ChatID] = append(resumedPerChat[s.ChatID], s.Code)

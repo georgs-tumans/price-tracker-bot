@@ -28,6 +28,7 @@ type Command struct {
 	DescriptionGeneral string
 	DescriptionTracker string
 	Hidden             bool // Whether the command shows up in the help menu
+	SkipNavigation     bool // Whether the command stays out of the "Return" navigation history
 	Params             []string
 	Handler            CommandFunc
 }
@@ -57,6 +58,8 @@ func NewCommandHandler(messenger helpers.Messenger, config *config.Configuration
 		"stop":     {Type: bothType, DescriptionTracker: "Stop a tracker", DescriptionGeneral: "Stop all running trackers", Handler: ch.handleStop, Hidden: false, Params: []string{trackerCodeParam}},
 		"interval": {Type: trackerType, DescriptionTracker: "Change the tracker run interval", Handler: ch.handleSetInterval, Hidden: false, Params: []string{trackerCodeParam, "interval*"}},
 		"status":   {Type: bothType, DescriptionTracker: "View a particular tracker status", DescriptionGeneral: "View status of all available trackers", Handler: ch.handleStatus, Hidden: false, Params: []string{trackerCodeParam}},
+		"mute":     {Type: trackerType, DescriptionTracker: "Pause tracker notifications", Handler: ch.handleMute, SkipNavigation: true, Params: []string{trackerCodeParam}},
+		"unmute":   {Type: trackerType, DescriptionTracker: "Resume tracker notifications", Handler: ch.handleUnmute, SkipNavigation: true, Params: []string{trackerCodeParam}},
 		"help":     {Type: generalType, DescriptionGeneral: "View all available commands", Handler: ch.handleHelp, Hidden: false},
 	}
 
@@ -83,7 +86,7 @@ func (ch *CommandHandler) HandleCommand(chatID int64, commandString string, call
 	log.Printf("[CommandHandler] Handling command: %s", commandString)
 
 	if c, exists := ch.commandMap[command]; exists {
-		if !isReturn {
+		if !isReturn && !c.SkipNavigation {
 			ch.GetUserNavigationState(chatID).Push(
 				&Command{
 					Command: command,
@@ -308,6 +311,40 @@ func (ch *CommandHandler) handleSetInterval(code string, chatID int64, commandPa
 	return errors.New("tracker not found")
 }
 
+func (ch *CommandHandler) handleMute(code string, chatID int64, commandParam *string) error {
+	return ch.setNotificationsPaused(code, chatID, commandParam, true)
+}
+
+func (ch *CommandHandler) handleUnmute(code string, chatID int64, commandParam *string) error {
+	return ch.setNotificationsPaused(code, chatID, commandParam, false)
+}
+
+func (ch *CommandHandler) setNotificationsPaused(code string, chatID int64, commandParam *string, paused bool) error {
+	tracker := ch.GetActiveTracker(code)
+	if tracker != nil {
+		tracker.SetNotificationsPaused(paused)
+		ch.saveState()
+		log.Printf("[CommandHandler] Tracker '%s' notifications paused: %t", code, paused)
+	}
+
+	callbackMessageID := ch.GetUserNavigationState(chatID).CallbackMessageID
+	fromNotification := utilities.GetStringPointerValue(commandParam) == helpers.NotificationSourceParam && callbackMessageID != nil
+
+	if !fromNotification {
+		return ch.handleStatus(code, chatID, nil)
+	}
+
+	if tracker == nil {
+		ch.messenger.SendHTML(chatID, "Tracker <b>"+code+"</b> is not running")
+
+		return errors.New("tracker not found")
+	}
+
+	ch.messenger.EditMenu(chatID, *callbackMessageID, helpers.GetNotificationMenu(code, paused))
+
+	return nil
+}
+
 func (ch *CommandHandler) handleStatus(code string, chatID int64, _ *string) error {
 	// Handle the case when the user wants to see the status of all trackers
 	if code == "" {
@@ -372,8 +409,17 @@ func (ch *CommandHandler) handleStatus(code string, chatID int64, _ *string) err
 	builder.WriteString("Current run interval: " + utilities.DurationToString(status.CurrentInterval) + "\n")
 	builder.WriteString("Execution errors count: " + strconv.Itoa(status.TotalErrors) + "\n")
 
+	notificationsButton := helpers.InlineButton("Pause notifications", "/mute "+code)
+	if status.NotificationsPaused {
+		builder.WriteString("Notifications: paused\n")
+		notificationsButton = helpers.InlineButton("Resume notifications", "/unmute "+code)
+	} else {
+		builder.WriteString("Notifications: on\n")
+	}
+
 	statusMenu.InlineKeyboard = append(statusMenu.InlineKeyboard, []models.InlineKeyboardButton{helpers.InlineButton("Stop tracker", "/stop "+code)})
 	statusMenu.InlineKeyboard = append(statusMenu.InlineKeyboard, []models.InlineKeyboardButton{helpers.InlineButton("Change run interval", "/interval "+code)})
+	statusMenu.InlineKeyboard = append(statusMenu.InlineKeyboard, []models.InlineKeyboardButton{notificationsButton})
 
 	ch.handleCommandMessage(chatID, builder.String(), statusMenu)
 

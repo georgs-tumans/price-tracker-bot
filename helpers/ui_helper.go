@@ -29,6 +29,19 @@ func GetIntervalCustomMenu() *models.ReplyKeyboardMarkup {
 	}
 }
 
+// NotificationSourceParam marks a /mute or /unmute button that sits on a notification message.
+const NotificationSourceParam = "n"
+
+// GetNotificationMenu returns the single pause/resume button shown on tracker notification messages.
+func GetNotificationMenu(code string, paused bool) *models.InlineKeyboardMarkup {
+	button := InlineButton("Pause notifications", "/mute "+code+" "+NotificationSourceParam)
+	if paused {
+		button = InlineButton("Resume notifications", "/unmute "+code+" "+NotificationSourceParam)
+	}
+
+	return &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{button}}}
+}
+
 func GetStatusInlineKeyboard() *models.InlineKeyboardMarkup {
 	return &models.InlineKeyboardMarkup{
 		InlineKeyboard: [][]models.InlineKeyboardButton{
