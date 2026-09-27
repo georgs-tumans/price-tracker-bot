@@ -42,6 +42,8 @@ General commands:
  - `/stop <tracker_code>` - stops a tracker
  - `/status <tracker_code>` - prints tracker status
  - `/interval <tracker_code> <interval_value>` - sets tracker run interval. Example command: `/interval bonds 1h`. Available interval types: 'm'(minute), 'h'(hour), 'd'(day)
+ - `/mute <tracker_code>` - pauses the tracker's notifications (the tracker keeps running). Also available as a button on the tracker status page and on every notification
+ - `/unmute <tracker_code>` - resumes the tracker's notifications. Notifications are on by default for newly started trackers
 
 ## Preconditions
 

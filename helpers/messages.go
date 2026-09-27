@@ -19,6 +19,7 @@ type Messenger interface {
 	SendHTMLWithMenu(chatID int64, text string, menu *models.InlineKeyboardMarkup)
 	SendHTMLWithKeyboard(chatID int64, text string, keyboard *models.ReplyKeyboardMarkup)
 	EditHTMLWithMenu(chatID int64, messageID int, text string, menu *models.InlineKeyboardMarkup)
+	EditMenu(chatID int64, messageID int, menu *models.InlineKeyboardMarkup)
 	RemoveKeyboard(chatID int64)
 }
 
@@ -93,6 +94,27 @@ func (m *TelegramMessenger) EditHTMLWithMenu(chatID int64, messageID int, text s
 	}
 
 	log.Printf("[Bot fixer] Edited existing message %d in chat %d; new message: %s", messageID, chatID, text)
+}
+
+// EditMenu replaces only the inline buttons of an existing message, leaving its text untouched.
+func (m *TelegramMessenger) EditMenu(chatID int64, messageID int, menu *models.InlineKeyboardMarkup) {
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	defer cancel()
+
+	params := &bot.EditMessageReplyMarkupParams{
+		ChatID:    chatID,
+		MessageID: messageID,
+	}
+	if menu != nil {
+		params.ReplyMarkup = menu
+	}
+
+	if _, err := m.bot.EditMessageReplyMarkup(ctx, params); err != nil {
+		log.Printf("[Bot fixer] Error editing message buttons: %s", err.Error())
+		return
+	}
+
+	log.Printf("[Bot fixer] Edited buttons of message %d in chat %d", messageID, chatID)
 }
 
 // RemoveKeyboard hides a custom reply keyboard. The only way to do that is to send a new text message

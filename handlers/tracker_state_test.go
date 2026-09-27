@@ -11,7 +11,7 @@ func TestStateFileRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "state.json")
 	saved := []savedTracker{
 		{Code: "bonds", ChatID: 123, Interval: "1h0m0s"},
-		{Code: "laptop", ChatID: -100456, Interval: "10m0s"},
+		{Code: "laptop", ChatID: -100456, Interval: "10m0s", NotificationsPaused: true},
 	}
 
 	if err := writeStateFile(path, saved); err != nil {

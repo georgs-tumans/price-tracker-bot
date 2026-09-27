@@ -8,23 +8,55 @@ import (
 	"time"
 
 	"pricetrackerbot/config"
+
+	"github.com/go-telegram/bot/models"
 )
 
 type fakeBehavior struct {
-	calls   atomic.Int32
-	err     error
-	doPanic bool
+	calls        atomic.Int32
+	err          error
+	doPanic      bool
+	notification string
 }
 
-func (f *fakeBehavior) Execute(_ *config.Tracker, _ int64) (string, error) {
+func (f *fakeBehavior) Execute(_ *config.Tracker) (string, string, error) {
 	f.calls.Add(1)
 
 	if f.doPanic {
 		panic("boom")
 	}
 
-	return "1.00", f.err
+	return "1.00", f.notification, f.err
 }
+
+type sentMessage struct {
+	text string
+	menu *models.InlineKeyboardMarkup
+}
+
+type recordingMessenger struct {
+	mu   sync.Mutex
+	sent []sentMessage
+}
+
+func (m *recordingMessenger) record(text string, menu *models.InlineKeyboardMarkup) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.sent = append(m.sent, sentMessage{text: text, menu: menu})
+}
+
+func (m *recordingMessenger) SendHTML(_ int64, text string) { m.record(text, nil) }
+func (m *recordingMessenger) SendHTMLWithMenu(_ int64, text string, menu *models.InlineKeyboardMarkup) {
+	m.record(text, menu)
+}
+func (m *recordingMessenger) SendHTMLWithKeyboard(_ int64, text string, _ *models.ReplyKeyboardMarkup) {
+	m.record(text, nil)
+}
+func (m *recordingMessenger) EditHTMLWithMenu(_ int64, _ int, _ string, _ *models.InlineKeyboardMarkup) {
+}
+func (m *recordingMessenger) EditMenu(_ int64, _ int, _ *models.InlineKeyboardMarkup) {}
+func (m *recordingMessenger) RemoveKeyboard(_ int64)                                  {}
 
 // A high error limit keeps the tests from trying to send a Telegram notification.
 func newTestTracker(behavior TrackerBehavior, interval time.Duration) *Tracker {
@@ -124,5 +156,33 @@ func TestTrackerRecoversFromPanic(t *testing.T) {
 
 	if got := tracker.Status().TotalErrors; got != 1 {
 		t.Errorf("TotalErrors = %d, want 1", got)
+	}
+}
+
+func TestTrackerNotificationsCanBePaused(t *testing.T) {
+	messenger := &recordingMessenger{}
+	tracker := newTestTracker(&fakeBehavior{notification: "Good news"}, time.Hour)
+	tracker.messenger = messenger
+
+	tracker.executeTrackerLogic()
+
+	if len(messenger.sent) != 1 || messenger.sent[0].text != "Good news" {
+		t.Fatalf("expected one notification, got %+v", messenger.sent)
+	}
+
+	menu := messenger.sent[0].menu
+	if menu == nil || menu.InlineKeyboard[0][0].CallbackData != "/mute test n" {
+		t.Errorf("notification is missing the pause button: %+v", menu)
+	}
+
+	tracker.SetNotificationsPaused(true)
+	tracker.executeTrackerLogic()
+
+	if len(messenger.sent) != 1 {
+		t.Errorf("notification sent while paused: %+v", messenger.sent)
+	}
+
+	if status := tracker.Status(); status.TotalRuns != 2 || !status.NotificationsPaused {
+		t.Errorf("unexpected status: %+v", status)
 	}
 }

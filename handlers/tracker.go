@@ -32,6 +32,8 @@ type TrackerStatus struct {
 	LastRecordedValue string
 	CurrentInterval   time.Duration
 	ExecutionErrors   []*TrackerExecutionError
+	// Only criteria-match notifications are paused; error alerts are still sent
+	NotificationsPaused bool
 }
 
 type TrackerExecutionError struct {
@@ -67,9 +69,9 @@ func CreateTracker(messenger helpers.Messenger, code string, runInterval time.Du
 
 	switch trackerType {
 	case API:
-		behavior = NewAPITrackerBehavior(messenger)
+		behavior = NewAPITrackerBehavior()
 	case Scraper:
-		behavior = NewScraperTrackerBehavior(messenger)
+		behavior = NewScraperTrackerBehavior()
 	default:
 		return nil, fmt.Errorf("unsupported client type for code: %s", code)
 	}
@@ -113,6 +115,13 @@ func (t *Tracker) ChatID() int64 {
 	return t.chatID
 }
 
+func (t *Tracker) SetNotificationsPaused(paused bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.status.NotificationsPaused = paused
+}
+
 func (t *Tracker) executeTrackerLogic() {
 	// A panic in a single run must not take down the whole bot
 	defer func() {
@@ -122,7 +131,7 @@ func (t *Tracker) executeTrackerLogic() {
 		}
 	}()
 
-	value, err := t.Behavior.Execute(t.trackerData, t.chatID)
+	value, notification, err := t.Behavior.Execute(t.trackerData)
 	if err != nil {
 		log.Printf("[Tracker] Error executing tracker '%s': %s", t.Code, err)
 		t.recordError(err)
@@ -131,12 +140,23 @@ func (t *Tracker) executeTrackerLogic() {
 	}
 
 	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	t.status.LastRunTimestamp = time.Now()
 	t.status.TotalRuns++
 	t.status.ConsecutiveErrors = 0
 	t.status.LastRecordedValue = value
+	paused := t.status.NotificationsPaused
+	t.mu.Unlock()
+
+	if notification == "" {
+		return
+	}
+
+	if paused {
+		log.Printf("[Tracker] Notifications paused for tracker '%s', not sending notification", t.Code)
+		return
+	}
+
+	t.messenger.SendHTMLWithMenu(t.chatID, notification, helpers.GetNotificationMenu(t.Code, false))
 }
 
 func (t *Tracker) recordError(err error) {

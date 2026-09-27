@@ -12,8 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-telegram/bot"
 	"pricetrackerbot/config"
+
+	"github.com/go-telegram/bot"
 )
 
 const (
@@ -87,7 +88,7 @@ func (f *fakeTelegram) handle(w http.ResponseWriter, r *http.Request) {
 		}
 
 		result = updates
-	case "sendMessage", "editMessageText":
+	case "sendMessage", "editMessageText", "editMessageReplyMarkup":
 		f.record(method, fields)
 
 		f.mu.Lock()
@@ -275,10 +276,10 @@ func TestBotEndToEnd(t *testing.T) {
 		t.Errorf("edited message is missing the Return button: %s", edited.Fields["reply_markup"])
 	}
 
-	// The tracker runs right away, finds 5 < 10 and notifies the chat
+	// The tracker runs right away, finds 5 < 10 and notifies the chat with a pause button
 	notification := fake.waitForCall("tracker notification", textContains("sendMessage", "Good news, tracker <b>bonds</b>"))
-	if _, hasMarkup := notification.Fields["reply_markup"]; hasMarkup {
-		t.Errorf("a message without a menu must not send reply_markup, got %q", notification.Fields["reply_markup"])
+	if !strings.Contains(notification.Fields["reply_markup"], `"callback_data":"/mute bonds n"`) {
+		t.Errorf("notification is missing the pause button: %s", notification.Fields["reply_markup"])
 	}
 
 	// The running tracker is saved for the next start
@@ -308,6 +309,28 @@ func TestBotEndToEnd(t *testing.T) {
 		t.Errorf("state file does not contain the new interval: %s", data)
 	}
 
+	// Pausing from the notification only swaps its button
+	fake.queueButtonClick(allowedChatID, 77, "/mute bonds n")
+	swapped := fake.waitForCall("notification button swapped", func(c apiCall) bool { return c.Method == "editMessageReplyMarkup" })
+	if swapped.Fields["message_id"] != "77" || !strings.Contains(swapped.Fields["reply_markup"], `"callback_data":"/unmute bonds n"`) {
+		t.Errorf("unexpected button swap: %+v", swapped.Fields)
+	}
+
+	data, _ = os.ReadFile(stateFile)
+	if !strings.Contains(string(data), `"notificationsPaused": true`) {
+		t.Errorf("state file does not contain the paused notifications: %s", data)
+	}
+
+	// Resuming from the status page re-renders it
+	fake.queueButtonClick(allowedChatID, 42, "/status bonds")
+	fake.waitForCall("status shows paused", func(c apiCall) bool {
+		return textContains("editMessageText", "Notifications: paused")(c) && strings.Contains(c.Fields["reply_markup"], `"callback_data":"/unmute bonds"`)
+	})
+	fake.queueButtonClick(allowedChatID, 42, "/unmute bonds")
+	fake.waitForCall("status shows on", func(c apiCall) bool {
+		return textContains("editMessageText", "Notifications: on")(c) && strings.Contains(c.Fields["reply_markup"], `"callback_data":"/mute bonds"`)
+	})
+
 	// "Return" goes back to the previous menu
 	fake.queueButtonClick(allowedChatID, 42, "/status")
 	fake.queueButtonClick(allowedChatID, 42, "/run bonds")
@@ -318,7 +341,10 @@ func TestBotEndToEnd(t *testing.T) {
 	fake.queueButtonClick(allowedChatID, 43, "back")
 	fake.queueButtonClick(allowedChatID, 43, "back")
 	fake.queueMessage(allowedChatID, "/help")
-	fake.waitForCall("bot still responds", textContains("sendMessage", "Welcome to the bot help section"))
+	help := fake.waitForCall("bot still responds", textContains("sendMessage", "Welcome to the bot help section"))
+	if _, hasMarkup := help.Fields["reply_markup"]; hasMarkup {
+		t.Errorf("a message without a menu must not send reply_markup, got %q", help.Fields["reply_markup"])
+	}
 
 	for _, call := range fake.callsSnapshot() {
 		if call.Fields["chat_id"] == fmt.Sprint(forbiddenChatID) {
@@ -329,7 +355,7 @@ func TestBotEndToEnd(t *testing.T) {
 
 func TestBotResumesTrackersAfterRestart(t *testing.T) {
 	stateFile := filepath.Join(t.TempDir(), "state.json")
-	state := fmt.Sprintf(`[{"code": "bonds", "chatId": %d, "interval": "30m0s"}, {"code": "removed-from-config", "chatId": %d, "interval": "1h0m0s"}]`, allowedChatID, allowedChatID)
+	state := fmt.Sprintf(`[{"code": "bonds", "chatId": %d, "interval": "30m0s", "notificationsPaused": true}, {"code": "removed-from-config", "chatId": %d, "interval": "1h0m0s"}]`, allowedChatID, allowedChatID)
 	if err := os.WriteFile(stateFile, []byte(state), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -349,6 +375,10 @@ func TestBotResumesTrackersAfterRestart(t *testing.T) {
 
 	if got := tracker.Status().CurrentInterval; got != 30*time.Minute {
 		t.Errorf("resumed interval = %s, want 30m", got)
+	}
+
+	if !tracker.Status().NotificationsPaused {
+		t.Error("resumed tracker lost its paused notifications")
 	}
 
 	// The tracker that no longer exists in the configuration is dropped from the state file
