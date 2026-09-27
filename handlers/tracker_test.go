@@ -7,9 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"pricetrackerbot/config"
-
 	"github.com/go-telegram/bot/models"
+	"pricetrackerbot/config"
 )
 
 type fakeBehavior struct {

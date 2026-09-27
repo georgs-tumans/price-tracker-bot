@@ -8,11 +8,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/go-telegram/bot/models"
 	"pricetrackerbot/config"
 	"pricetrackerbot/helpers"
 	"pricetrackerbot/utilities"
-
-	"github.com/go-telegram/bot/models"
 )
 
 const (

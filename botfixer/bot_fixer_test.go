@@ -12,9 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"pricetrackerbot/config"
-
 	"github.com/go-telegram/bot"
+	"pricetrackerbot/config"
 )
 
 const (
