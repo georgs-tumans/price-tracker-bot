@@ -273,7 +273,7 @@ func (ch *CommandHandler) handleSetInterval(code string, chatID int64, commandPa
 		navigationState.CustomKeyboardActive = true
 
 		ch.messenger.SendHTMLWithKeyboard(
-			chatID, "Send me the new interval value!\n\nThe format: <i>[number][interval type*]</i>\n\nAvailable interval types: \n'm'(minute), 'h'(hour), 'd'(day)",
+			chatID, "Send me the new interval value!\n\nThe format: <i>[number][interval type*]</i>\n\nAvailable interval types: \n'm'(minute), 'h'(hour), 'd'(day)\n\nMinimum interval: "+utilities.DurationToString(ch.config.MinInterval),
 			helpers.GetIntervalCustomMenu(),
 		)
 		navigationState.AwaitingUserInput = true
@@ -294,6 +294,13 @@ func (ch *CommandHandler) handleSetInterval(code string, chatID int64, commandPa
 		ch.handleCommandMessage(chatID, "Invalid interval value. Available interval types: 'm'(minute), 'h'(hour), 'd'(day)", nil)
 
 		return err
+	}
+
+	if newInterval < ch.config.MinInterval {
+		log.Printf("[CommandHandler] Interval %s is below the minimum of %s", newInterval, ch.config.MinInterval)
+		ch.handleCommandMessage(chatID, "The interval must be at least "+utilities.DurationToString(ch.config.MinInterval), nil)
+
+		return errors.New("interval below the minimum")
 	}
 
 	if tracker := ch.GetActiveTracker(code); tracker != nil {
@@ -407,6 +414,9 @@ func (ch *CommandHandler) handleStatus(code string, chatID int64, _ *string) err
 	builder.WriteString("Last recorded value: " + lastRecordedValue + "\n")
 	builder.WriteString(helpers.FormatNotificationCriteriaString(tracker.trackerData.NotifyCriteria) + "\n")
 	builder.WriteString("Current run interval: " + utilities.DurationToString(status.CurrentInterval) + "\n")
+	if status.BackoffLevel > 0 {
+		builder.WriteString("Backing off, the site is blocking requests: next run at " + status.NextRunTimestamp.Format("02.01.2006 15:04") + "\n")
+	}
 	builder.WriteString("Execution errors count: " + strconv.Itoa(status.TotalErrors) + "\n")
 
 	notificationsButton := helpers.InlineButton("Pause notifications", "/mute "+code)
@@ -457,6 +467,7 @@ func (ch *CommandHandler) handleHelp(code string, chatID int64, _ *string) error
 
 	builder.WriteString("\n<b>*</b>Interval parameter format: \n<i>[number][interval type]</i> (e.g. 5m, 1h, 2d)\n")
 	builder.WriteString("\nAvailable interval types: \n'm'(minute), 'h'(hour), 'd'(day)\n")
+	builder.WriteString("\nMinimum interval: " + utilities.DurationToString(ch.config.MinInterval) + "\n")
 
 	ch.messenger.SendHTML(chatID, builder.String())
 

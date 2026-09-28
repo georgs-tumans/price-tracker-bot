@@ -9,9 +9,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/joho/godotenv"
+	"pricetrackerbot/utilities"
 )
 
 type NotifyCriteria struct {
@@ -31,15 +33,18 @@ type Tracker struct {
 const (
 	defaultStateFile        = "data/state.json"
 	defaultErrorNotifyLimit = 3
+	defaultMinInterval      = 10 * time.Minute
 )
 
 type Configuration struct {
 	BotAPIKey        string `validate:"required"`
 	ErrorNotifyLimit int    `validate:"min=1"`
-	AllowedChatIDs   []int64
-	StateFile        string     `validate:"required"`
-	APITrackers      []*Tracker `validate:"dive"`
-	ScraperTrackers  []*Tracker `validate:"dive"`
+	// The shortest run interval a tracker may use, so that tracked sites aren't requested too often
+	MinInterval     time.Duration
+	AllowedChatIDs  []int64
+	StateFile       string     `validate:"required"`
+	APITrackers     []*Tracker `validate:"dive"`
+	ScraperTrackers []*Tracker `validate:"dive"`
 }
 
 var config *Configuration
@@ -86,6 +91,10 @@ func loadConfig() (*Configuration, error) {
 		return nil, fmt.Errorf("error parsing ERROR_NOTIFY_LIMIT: %w", err)
 	}
 
+	if cfg.MinInterval, err = parseMinInterval(os.Getenv("MIN_INTERVAL")); err != nil {
+		return nil, fmt.Errorf("error parsing MIN_INTERVAL: %w", err)
+	}
+
 	if cfg.AllowedChatIDs, err = parseChatIDs(os.Getenv("ALLOWED_CHAT_IDS")); err != nil {
 		return nil, fmt.Errorf("error parsing ALLOWED_CHAT_IDS: %w", err)
 	}
@@ -112,6 +121,24 @@ func parseErrorNotifyLimit(value string) (int, error) {
 	}
 
 	return strconv.Atoi(value)
+}
+
+// Returns the configured minimum run interval (e.g. "10m"), or the default of 10 minutes when it's not set.
+func parseMinInterval(value string) (time.Duration, error) {
+	if value == "" {
+		return defaultMinInterval, nil
+	}
+
+	interval, err := utilities.ParseDurationWithDays(value)
+	if err != nil {
+		return 0, err
+	}
+
+	if interval <= 0 {
+		return 0, errors.New("the minimum interval must be positive")
+	}
+
+	return interval, nil
 }
 
 func loadTrackers(fileVar string) ([]*Tracker, error) {

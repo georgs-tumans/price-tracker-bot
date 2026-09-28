@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 )
 
 func TestParseChatIDs(t *testing.T) {
@@ -57,7 +58,7 @@ func TestLoadConfig(t *testing.T) {
 
 	setEnv := func(t *testing.T, values map[string]string) {
 		t.Helper()
-		for _, key := range []string{"BOT_API_KEY", "STATE_FILE", "ERROR_NOTIFY_LIMIT", "ALLOWED_CHAT_IDS", "API_TRACKERS_FILE", "SCRAPER_TRACKERS_FILE"} {
+		for _, key := range []string{"BOT_API_KEY", "STATE_FILE", "ERROR_NOTIFY_LIMIT", "MIN_INTERVAL", "ALLOWED_CHAT_IDS", "API_TRACKERS_FILE", "SCRAPER_TRACKERS_FILE"} {
 			t.Setenv(key, values[key])
 		}
 	}
@@ -70,7 +71,7 @@ func TestLoadConfig(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if cfg.StateFile != defaultStateFile || cfg.ErrorNotifyLimit != defaultErrorNotifyLimit || len(cfg.AllowedChatIDs) != 0 {
+		if cfg.StateFile != defaultStateFile || cfg.ErrorNotifyLimit != defaultErrorNotifyLimit || cfg.MinInterval != defaultMinInterval || len(cfg.AllowedChatIDs) != 0 {
 			t.Errorf("unexpected defaults: %+v", cfg)
 		}
 
@@ -82,7 +83,7 @@ func TestLoadConfig(t *testing.T) {
 	t.Run("explicit values", func(t *testing.T) {
 		setEnv(t, map[string]string{
 			"BOT_API_KEY": "key", "API_TRACKERS_FILE": trackersFile,
-			"STATE_FILE": "/data/state.json", "ERROR_NOTIFY_LIMIT": "5", "ALLOWED_CHAT_IDS": "1,2",
+			"STATE_FILE": "/data/state.json", "ERROR_NOTIFY_LIMIT": "5", "MIN_INTERVAL": "1m", "ALLOWED_CHAT_IDS": "1,2",
 		})
 
 		cfg, err := loadConfig()
@@ -90,16 +91,18 @@ func TestLoadConfig(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if cfg.StateFile != "/data/state.json" || cfg.ErrorNotifyLimit != 5 || !slices.Equal(cfg.AllowedChatIDs, []int64{1, 2}) {
+		if cfg.StateFile != "/data/state.json" || cfg.ErrorNotifyLimit != 5 || cfg.MinInterval != time.Minute || !slices.Equal(cfg.AllowedChatIDs, []int64{1, 2}) {
 			t.Errorf("unexpected values: %+v", cfg)
 		}
 	})
 
 	errorCases := map[string]map[string]string{
-		"invalid error limit": {"API_TRACKERS_FILE": trackersFile, "ERROR_NOTIFY_LIMIT": "three"},
-		"invalid chat ID":     {"API_TRACKERS_FILE": trackersFile, "ALLOWED_CHAT_IDS": "abc"},
-		"missing file":        {"API_TRACKERS_FILE": filepath.Join(t.TempDir(), "missing.json")},
-		"no trackers":         {},
+		"invalid error limit":  {"API_TRACKERS_FILE": trackersFile, "ERROR_NOTIFY_LIMIT": "three"},
+		"invalid chat ID":      {"API_TRACKERS_FILE": trackersFile, "ALLOWED_CHAT_IDS": "abc"},
+		"invalid min interval": {"API_TRACKERS_FILE": trackersFile, "MIN_INTERVAL": "10s"},
+		"zero min interval":    {"API_TRACKERS_FILE": trackersFile, "MIN_INTERVAL": "0m"},
+		"missing file":         {"API_TRACKERS_FILE": filepath.Join(t.TempDir(), "missing.json")},
+		"no trackers":          {},
 	}
 
 	for name, values := range errorCases {

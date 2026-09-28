@@ -10,7 +10,7 @@ File structure for both of these configurations must be as follows:
      "code": "<string> trackerCode - an arbitrary value to identify each tracking URL; must be unique for each URL; cannot contain the following symbols: '_', '/', ' ' (space)",
      "apiUrl":"<string> the public API URL for accessing data",
      "viewUrl":"<string> the website URL to add to the user notification message",
-     "interval":"<string> tracker run interval; format: '1h'; available interval types: "m" - minutes, "h" - hours, "d" - days", 
+     "interval":"<string> tracker run interval; format: '1h'; available interval types: "m" - minutes, "h" - hours, "d" - days; values below MIN_INTERVAL are raised to it", 
      "notifyCriteria":"<[{"operator": "", value: 0}]> a list with the criteria for sending notifications; available operators: '<'|'<='|'='|'>='|'>'; notification calculation logic: [extracted value <notifyCriteria> notifyValue]",
      "responsePath":"<[string] the path to the value in the response JSON; format: uses gson query syntax for extracting data from api tracker response json - https://github.com/tidwall/gjson>; in case of scraper trackers - uses goquery syntax - https://pkg.go.dev/github.com/PuerkitoBio/goquery"
    }
