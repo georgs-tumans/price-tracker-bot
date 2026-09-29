@@ -21,8 +21,8 @@ const (
 	// How many of the most recent execution errors are kept for a tracker.
 	executionErrorHistory = 20
 
-	// While a site keeps blocking requests, the run interval is doubled up to this many times the configured one.
-	maxBackoffMultiplier = 8
+	// While a site keeps blocking requests, the run interval is doubled up to this many times (8x the configured one).
+	maxBackoffDoublings = 3
 	// Upper limit for a backed off delay and for a server provided Retry-After, unless the interval itself is longer.
 	maxBackoffDelay = 24 * time.Hour
 )
@@ -214,13 +214,13 @@ func (t *Tracker) recordError(err error) {
 }
 
 // Returns how long to wait until the next run: the interval, doubled for every blocked run in a row (up to
-// maxBackoffMultiplier), and never shorter than what the server asked for with Retry-After.
+// maxBackoffDoublings times), and never shorter than what the server asked for with Retry-After.
 func backoffDelay(interval time.Duration, backoffLevel int, retryAfter time.Duration) time.Duration {
 	if backoffLevel <= 0 {
 		return interval
 	}
 
-	multiplier := min(1<<min(backoffLevel, 30), maxBackoffMultiplier)
+	multiplier := 1 << min(backoffLevel, maxBackoffDoublings)
 	delay := min(interval*time.Duration(multiplier), max(interval, maxBackoffDelay))
 
 	return max(delay, min(retryAfter, maxBackoffDelay))
@@ -267,6 +267,7 @@ func (t *Tracker) run(ctx context.Context, interval time.Duration) {
 		case <-ctx.Done():
 			timer.Stop()
 			log.Printf("[Tracker] Stopping tracker '%s'", t.Code)
+
 			return
 		}
 	}

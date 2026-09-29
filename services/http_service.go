@@ -19,7 +19,7 @@ const (
 	// blocked outright by some sites.
 	DefaultUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
 
-	// Accept headers for API and web page requests; the latter together with AcceptLanguage match what a browser sends
+	// Accept headers for API and web page requests; the latter together with AcceptLanguage match what a browser sends.
 	AcceptJSON     = "application/json"
 	AcceptHTML     = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
 	AcceptLanguage = "en-US,en;q=0.9"

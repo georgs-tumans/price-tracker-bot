@@ -1,7 +1,7 @@
 [
 	{
 		"code": "exampleTracker1",
-		"dataUrl": "https://example.com/api/data",
+		"dataUrl": "https://example.com/product",
 		"viewUrl": "https://example.com/view",
 		"interval": "1h",
 		"notifyCriteria": [
@@ -14,6 +14,6 @@
 				"value": "50"
 			}
 		],
-		"dataExtractionPath": "path.to.data"
+		"dataExtractionPath": ".product .price"
 	}
 ]
