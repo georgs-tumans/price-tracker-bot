@@ -1,13 +1,16 @@
 package clients
 
 import (
+	"errors"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"pricetrackerbot/config"
+	"pricetrackerbot/services"
 )
 
 const testPage = `<!DOCTYPE html>
@@ -44,7 +47,13 @@ func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/page", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/page", func(w http.ResponseWriter, r *http.Request) {
+		// Sites block well-known client user agents, so the scraper must present itself as a browser
+		if !strings.HasPrefix(r.UserAgent(), "Mozilla/") {
+			http.Error(w, "bots not allowed", http.StatusForbidden)
+			return
+		}
+
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(testPage))
 	})
@@ -54,6 +63,10 @@ func newTestServer(t *testing.T) *httptest.Server {
 	})
 	mux.HandleFunc("/missing", func(w http.ResponseWriter, _ *http.Request) {
 		http.NotFound(w, nil)
+	})
+	mux.HandleFunc("/rate-limited", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "120")
+		http.Error(w, "slow down", http.StatusTooManyRequests)
 	})
 
 	server := httptest.NewServer(mux)
@@ -202,6 +215,32 @@ func TestPublicAPIClientErrors(t *testing.T) {
 			_, err := client.FetchAndExtractData(&config.Tracker{Code: "test", DataURL: tt.url, DataExtractionPath: tt.path})
 			if err == nil {
 				t.Error("expected an error")
+			}
+		})
+	}
+}
+
+// Blocking responses must come back as a typed error so that the tracker can back off.
+func TestClientsReturnHTTPStatusError(t *testing.T) {
+	server := newTestServer(t)
+	trackerData := &config.Tracker{Code: "test", DataURL: server.URL + "/rate-limited", DataExtractionPath: "price"}
+
+	clients := map[string]func() (*DataResult, error){
+		"scraper": func() (*DataResult, error) { return NewScraperClient().FetchAndExtractData(trackerData) },
+		"api":     func() (*DataResult, error) { return NewPublicAPIClient().FetchAndExtractData(trackerData) },
+	}
+
+	for name, fetch := range clients {
+		t.Run(name, func(t *testing.T) {
+			_, err := fetch()
+
+			var statusErr *services.HTTPStatusError
+			if !errors.As(err, &statusErr) {
+				t.Fatalf("expected an HTTPStatusError, got %v", err)
+			}
+
+			if statusErr.StatusCode != http.StatusTooManyRequests || statusErr.RetryAfter != 2*time.Minute || !statusErr.IsBlocking() {
+				t.Errorf("unexpected error: %+v", statusErr)
 			}
 		})
 	}

@@ -10,6 +10,7 @@ import (
 
 	"pricetrackerbot/config"
 	"pricetrackerbot/helpers"
+	"pricetrackerbot/services"
 	"pricetrackerbot/utilities"
 )
 
@@ -19,6 +20,11 @@ const (
 
 	// How many of the most recent execution errors are kept for a tracker.
 	executionErrorHistory = 20
+
+	// While a site keeps blocking requests, the run interval is doubled up to this many times (8x the configured one).
+	maxBackoffDoublings = 3
+	// Upper limit for a backed off delay and for a server provided Retry-After, unless the interval itself is longer.
+	maxBackoffDelay = 24 * time.Hour
 )
 
 var errUnrecognizedTracker = errors.New("unrecognized tracker code")
@@ -31,7 +37,10 @@ type TrackerStatus struct {
 	ConsecutiveErrors int
 	LastRecordedValue string
 	CurrentInterval   time.Duration
-	ExecutionErrors   []*TrackerExecutionError
+	// How many runs in a row the site responded with a blocking status code (403, 429, 503); 0 when not backing off
+	BackoffLevel     int
+	NextRunTimestamp time.Time
+	ExecutionErrors  []*TrackerExecutionError
 	// Only criteria-match notifications are paused; error alerts are still sent
 	NotificationsPaused bool
 }
@@ -51,9 +60,10 @@ type Tracker struct {
 	errorLimit  int
 
 	// Guards everything below; the tracker goroutine and the command handlers access these concurrently
-	mu     sync.Mutex
-	status TrackerStatus
-	cancel context.CancelFunc // nil while the tracker is not running
+	mu         sync.Mutex
+	status     TrackerStatus
+	retryAfter time.Duration      // Retry-After of the last blocking response
+	cancel     context.CancelFunc // nil while the tracker is not running
 }
 
 func CreateTracker(messenger helpers.Messenger, code string, runInterval time.Duration, config *config.Configuration, chatID int64) (*Tracker, error) {
@@ -85,6 +95,11 @@ func CreateTracker(messenger helpers.Messenger, code string, runInterval time.Du
 			log.Printf("[Tracker] Error parsing default configured run interval for tracker '%s': %s", code, err.Error())
 			return nil, err
 		}
+	}
+
+	if runIntervalToUse < config.MinInterval {
+		log.Printf("[Tracker] Run interval %s of tracker '%s' is below the minimum, using %s instead", runIntervalToUse, code, config.MinInterval)
+		runIntervalToUse = config.MinInterval
 	}
 
 	return &Tracker{
@@ -143,6 +158,8 @@ func (t *Tracker) executeTrackerLogic() {
 	t.status.LastRunTimestamp = time.Now()
 	t.status.TotalRuns++
 	t.status.ConsecutiveErrors = 0
+	t.status.BackoffLevel = 0
+	t.retryAfter = 0
 	t.status.LastRecordedValue = value
 	paused := t.status.NotificationsPaused
 	t.mu.Unlock()
@@ -169,14 +186,55 @@ func (t *Tracker) recordError(err error) {
 	if len(t.status.ExecutionErrors) > executionErrorHistory {
 		t.status.ExecutionErrors = t.status.ExecutionErrors[len(t.status.ExecutionErrors)-executionErrorHistory:]
 	}
+
+	var statusErr *services.HTTPStatusError
+	blocked := errors.As(err, &statusErr) && statusErr.IsBlocking()
+	if blocked {
+		t.status.BackoffLevel++
+		t.retryAfter = statusErr.RetryAfter
+	}
+	nextDelay := backoffDelay(t.status.CurrentInterval, t.status.BackoffLevel, t.retryAfter)
+
 	// Notify only once when the limit is reached, not on every following failed run
 	notify := t.status.ConsecutiveErrors == t.errorLimit
 	t.mu.Unlock()
 
+	if blocked {
+		log.Printf("[Tracker] Tracker '%s' got HTTP %d, backing off; next run in %s", t.Code, statusErr.StatusCode, nextDelay)
+	}
+
 	if notify {
 		notificationMessage := fmt.Sprintf("Tracker <b>%s</b> has failed %d times in a row, you should probably take a look at the logs :(", t.Code, t.errorLimit)
+		if blocked {
+			notificationMessage += fmt.Sprintf("\n\nThe site seems to be blocking or rate limiting requests (HTTP %d), so the tracker now runs less often: next run in %s",
+				statusErr.StatusCode, utilities.DurationToString(nextDelay))
+		}
 		t.messenger.SendHTML(t.chatID, notificationMessage)
 	}
+}
+
+// Returns how long to wait until the next run: the interval, doubled for every blocked run in a row (up to
+// maxBackoffDoublings times), and never shorter than what the server asked for with Retry-After.
+func backoffDelay(interval time.Duration, backoffLevel int, retryAfter time.Duration) time.Duration {
+	if backoffLevel <= 0 {
+		return interval
+	}
+
+	multiplier := 1 << min(backoffLevel, maxBackoffDoublings)
+	delay := min(interval*time.Duration(multiplier), max(interval, maxBackoffDelay))
+
+	return max(delay, min(retryAfter, maxBackoffDelay))
+}
+
+// Works out when the next run happens, records it in the status and returns the time to wait.
+func (t *Tracker) scheduleNextRun(interval time.Duration) time.Duration {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	delay := backoffDelay(interval, t.status.BackoffLevel, t.retryAfter)
+	t.status.NextRunTimestamp = time.Now().Add(delay)
+
+	return delay
 }
 
 func (t *Tracker) Start() {
@@ -198,18 +256,18 @@ func (t *Tracker) Start() {
 }
 
 func (t *Tracker) run(ctx context.Context, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	// Execute immediately on start
-	t.executeTrackerLogic()
-
+	// Execute immediately on start, then wait between runs; a timer instead of a ticker lets the delay grow
+	// while the site is blocking requests
 	for {
+		t.executeTrackerLogic()
+
+		timer := time.NewTimer(t.scheduleNextRun(interval))
 		select {
-		case <-ticker.C:
-			t.executeTrackerLogic()
+		case <-timer.C:
 		case <-ctx.Done():
+			timer.Stop()
 			log.Printf("[Tracker] Stopping tracker '%s'", t.Code)
+
 			return
 		}
 	}

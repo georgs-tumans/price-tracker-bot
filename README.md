@@ -41,7 +41,7 @@ General commands:
  - `/run <tracker_code>` - starts a tracker
  - `/stop <tracker_code>` - stops a tracker
  - `/status <tracker_code>` - prints tracker status
- - `/interval <tracker_code> <interval_value>` - sets tracker run interval. Example command: `/interval bonds 1h`. Available interval types: 'm'(minute), 'h'(hour), 'd'(day)
+ - `/interval <tracker_code> <interval_value>` - sets tracker run interval. Example command: `/interval bonds 1h`. Available interval types: 'm'(minute), 'h'(hour), 'd'(day). Intervals below `MIN_INTERVAL` (default 10m) are rejected, see [Avoiding getting blocked](#avoiding-getting-blocked)
  - `/mute <tracker_code>` - pauses the tracker's notifications (the tracker keeps running). Also available as a button on the tracker status page and on every notification
  - `/unmute <tracker_code>` - resumes the tracker's notifications. Notifications are on by default for newly started trackers
 
@@ -64,6 +64,16 @@ General commands:
 The bot receives updates from Telegram via **long polling**: it keeps a request open to Telegram's servers and gets new messages as soon as they arrive. It only makes outgoing connections, so it needs no public URL, HTTPS certificate, port forwarding or tunnel, and it works the same on a home server as on a laptop.
 
 Running trackers are saved to a state file (`STATE_FILE`). After a restart (crash, deploy, server reboot) the bot resumes them and sends a "the bot was restarted" message to the chats they belong to.
+
+### Avoiding getting blocked
+
+Tracked sites see requests coming from the server's IP, so the bot tries not to look like, or behave like, an aggressive bot:
+
+- **Browser-like requests:** requests send a regular desktop browser `User-Agent` (plus `Accept` / `Accept-Language` for web pages) instead of the default Go or colly one, which some sites block outright.
+- **Minimum run interval:** no tracker runs more often than `MIN_INTERVAL` (default `10m`). Shorter `/interval` values are rejected, and shorter intervals from the tracker config or state file are raised to it. Set `MIN_INTERVAL=1m` locally for debugging.
+- **Backoff when blocked:** if a site answers with 403, 429 or 503, the tracker doubles its wait after every such run in a row (up to 8× the interval, at most 24h) and never retries sooner than the site's `Retry-After`. The first successful run goes back to the normal interval. `/status` shows when a tracker is backing off.
+
+This lowers the risk of getting blocked but doesn't get around bot protection (Cloudflare challenges and the like). For such sites, look for a JSON endpoint and use an API tracker instead.
 
 ## Configuration
 
