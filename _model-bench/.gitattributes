@@ -1,0 +1,2 @@
+# Same bytes on every OS: the reference patches must apply exactly and the scripts run in bash
+* text=auto eol=lf

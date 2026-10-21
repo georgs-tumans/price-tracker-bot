@@ -1,0 +1,7 @@
+branch	task	build	vet	tests	hidden_passed	hidden_total	lint_issues	removed_names_left	test_edits_not_allowed	allowed_test_edits	protected_files	crlf_files	new_test_funcs	plus	minus	files	report	kit_seen
+self-test/base-t1	T1	pass	pass	pass	0	3	0	10	none	none	none	none	0	0	0	0	no	no
+self-test/reference-t1	T1	pass	pass	pass	3	3	0	0	none	none	none	none	1	64	31	4	no	no
+self-test/base-t2	T2	pass	pass	pass	0	7	0	25	none	none	none	none	0	0	0	0	no	no
+self-test/reference-t2	T2	pass	pass	pass	7	7	0	0	none	botfixer/bot_fixer_test.go config/config_test.go handlers/tracker_test.go 	none	none	1	99	81	7	no	no
+self-test/base-t3	T3	pass	pass	pass	0	7	0	6	none	none	none	none	0	0	0	0	no	no
+self-test/reference-t3	T3	pass	pass	pass	7	7	0	0	none	botfixer/bot_fixer_test.go 	none	none	0	298	200	5	no	no

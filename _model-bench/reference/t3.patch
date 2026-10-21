@@ -1,0 +1,675 @@
+diff --git a/botfixer/bot_fixer.go b/botfixer/bot_fixer.go
+index 2b66e2d..c8fe51e 100644
+--- a/botfixer/bot_fixer.go
++++ b/botfixer/bot_fixer.go
+@@ -76,7 +76,7 @@ func (b *BotFixer) Run(ctx context.Context) {
+ 	}
+ 
+ 	// Trackers run until they are stopped explicitly, independent of this context
+-	b.CommandHandler.ResumeTrackers() //nolint:contextcheck
++	b.CommandHandler.Trackers().Resume() //nolint:contextcheck
+ 
+ 	log.Println("[Bot fixer] Bot initialized via long polling; listening for updates")
+ 
+diff --git a/botfixer/bot_fixer_test.go b/botfixer/bot_fixer_test.go
+index 4845e72..a1d5dab 100644
+--- a/botfixer/bot_fixer_test.go
++++ b/botfixer/bot_fixer_test.go
+@@ -236,7 +236,7 @@ func startTestBot(t *testing.T, fake *fakeTelegram, cfg *config.Configuration) *
+ 
+ 	t.Cleanup(func() {
+ 		<-done
+-		botFixer.CommandHandler.StopAllTrackers()
++		botFixer.CommandHandler.Trackers().StopAll()
+ 	})
+ 
+ 	return botFixer
+@@ -367,7 +367,7 @@ func TestBotResumesTrackersAfterRestart(t *testing.T) {
+ 		t.Errorf("unexpected restart notice: %q", restarted.Fields["text"])
+ 	}
+ 
+-	tracker := botFixer.CommandHandler.GetActiveTracker("bonds")
++	tracker := botFixer.CommandHandler.Trackers().Get("bonds")
+ 	if tracker == nil {
+ 		t.Fatal("tracker 'bonds' was not resumed")
+ 	}
+diff --git a/handlers/command_handler.go b/handlers/command_handler.go
+index 987872c..4a40912 100644
+--- a/handlers/command_handler.go
++++ b/handlers/command_handler.go
+@@ -34,13 +34,12 @@ type Command struct {
+ }
+ 
+ type CommandHandler struct {
+-	config          *config.Configuration
+-	runningTrackers []*Tracker
+-	commandMap      map[string]*Command
+-	messenger       helpers.Messenger
+-	mu              sync.Mutex // Guards runningTrackers
+-	navigationMu    sync.Mutex // Guards navigation
+-	navigation      map[int64]*NavigationState
++	config       *config.Configuration
++	trackers     *TrackerManager
++	commandMap   map[string]*Command
++	messenger    helpers.Messenger
++	navigationMu sync.Mutex // Guards navigation
++	navigation   map[int64]*NavigationState
+ }
+ 
+ type CommandFunc func(code string, chatID int64, commandParam *string) error
+@@ -48,6 +47,7 @@ type CommandFunc func(code string, chatID int64, commandParam *string) error
+ func NewCommandHandler(messenger helpers.Messenger, config *config.Configuration) *CommandHandler {
+ 	ch := &CommandHandler{
+ 		config:     config,
++		trackers:   NewTrackerManager(messenger, config),
+ 		messenger:  messenger,
+ 		navigation: make(map[int64]*NavigationState),
+ 	}
+@@ -66,6 +66,11 @@ func NewCommandHandler(messenger helpers.Messenger, config *config.Configuration
+ 	return ch
+ }
+ 
++// Trackers returns the manager of the running trackers.
++func (ch *CommandHandler) Trackers() *TrackerManager {
++	return ch.trackers
++}
++
+ func (ch *CommandHandler) HandleCommand(chatID int64, commandString string, callbackMessageID *int, isReturn bool) error {
+ 	// Message ID is only available when handling commands as a result of a button callback
+ 	ch.GetUserNavigationState(chatID).CallbackMessageID = callbackMessageID
+@@ -157,37 +162,13 @@ func (ch *CommandHandler) HandleUserInput(chatID int64, userInput string, callba
+ 	return nil
+ }
+ 
+-func (ch *CommandHandler) startTracker(trackerCode string, chatID int64, errors map[string]error) {
+-	if newTracker, err := CreateTracker(ch.messenger, trackerCode, 0, ch.config, chatID); err != nil {
+-		errors[trackerCode] = err
+-	} else {
+-		ch.AddRunningTracker(newTracker)
+-		newTracker.Start()
+-		log.Printf("[CommandHandler] Starting tracker: %s", newTracker.Code)
+-	}
+-}
+-
+ func (ch *CommandHandler) startAllTrackers(chatID int64) {
+-	errors := make(map[string]error)
+-
+-	for _, tracker := range ch.config.APITrackers {
+-		if tr := ch.GetActiveTracker(tracker.Code); tr == nil {
+-			ch.startTracker(tracker.Code, chatID, errors)
+-		}
+-	}
++	failed := ch.trackers.StartAll(chatID)
+ 
+-	for _, tracker := range ch.config.ScraperTrackers {
+-		if tr := ch.GetActiveTracker(tracker.Code); tr == nil {
+-			ch.startTracker(tracker.Code, chatID, errors)
+-		}
+-	}
+-
+-	ch.saveState()
+-
+-	if len(errors) > 0 {
++	if len(failed) > 0 {
+ 		var builder strings.Builder
+ 		builder.WriteString("Failed to start the following trackers:\n")
+-		for code, err := range errors {
++		for code, err := range failed {
+ 			fmt.Fprintf(&builder, " - %s: %s\n", code, err.Error())
+ 		}
+ 
+@@ -206,28 +187,24 @@ func (ch *CommandHandler) handleStart(code string, chatID int64, _ *string) erro
+ 	}
+ 
+ 	// Start a specific tracker
+-	if tracker := ch.GetActiveTracker(code); tracker == nil {
+-		newTracker, err := CreateTracker(ch.messenger, code, 0, ch.config, chatID)
+-		if err != nil {
+-			log.Printf("[CommandHandler] Error creating a new tracker: %s", code)
+-			message := "Failed to start the tracker :("
+-			if errors.Is(err, errUnrecognizedTracker) {
+-				message = "Invalid command, tracker with code '" + code + "' not found :("
+-			}
+-
+-			ch.handleCommandMessage(chatID, message, nil)
+-
+-			return err
+-		}
+-		ch.AddRunningTracker(newTracker)
+-		newTracker.Start()
+-		ch.saveState()
+-
++	err := ch.trackers.Start(code, chatID)
++	switch {
++	case err == nil:
+ 		ch.handleCommandMessage(chatID, "Tracker '"+code+"' has been started", nil)
+ 		log.Printf("[CommandHandler] Starting tracker: %s", code)
+-	} else {
++	case errors.Is(err, ErrTrackerAlreadyRunning):
+ 		log.Printf("[CommandHandler] Tracker '%s' is already running", code)
+ 		ch.handleCommandMessage(chatID, "Tracker '"+code+"' is already running", nil)
++	default:
++		log.Printf("[CommandHandler] Error creating a new tracker %s: %s", code, err)
++		message := "Failed to start the tracker :("
++		if errors.Is(err, errUnrecognizedTracker) {
++			message = "Invalid command, tracker with code '" + code + "' not found :("
++		}
++
++		ch.handleCommandMessage(chatID, message, nil)
++
++		return err
+ 	}
+ 
+ 	return nil
+@@ -236,18 +213,14 @@ func (ch *CommandHandler) handleStart(code string, chatID int64, _ *string) erro
+ func (ch *CommandHandler) handleStop(code string, chatID int64, _ *string) error {
+ 	// Stop all trackers
+ 	if code == "" {
+-		ch.StopAllTrackers()
+-		ch.saveState()
++		ch.trackers.StopAll()
+ 		ch.handleCommandMessage(chatID, "All running trackers have been stopped", nil)
+ 
+ 		return nil
+ 	}
+ 
+ 	// Stop a specific tracker
+-	if tracker := ch.GetActiveTracker(code); tracker != nil {
+-		ch.RemoveRunningTracker(code)
+-		tracker.Stop()
+-		ch.saveState()
++	if ch.trackers.Stop(code) {
+ 		ch.handleCommandMessage(chatID, "Tracker '"+code+"' has been stopped", nil)
+ 	} else {
+ 		log.Printf("[CommandHandler] Tracker '%s' is not running", code)
+@@ -257,16 +230,6 @@ func (ch *CommandHandler) handleStop(code string, chatID int64, _ *string) error
+ 	return nil
+ }
+ 
+-func (ch *CommandHandler) StopAllTrackers() {
+-	ch.mu.Lock()
+-	defer ch.mu.Unlock()
+-
+-	for _, tracker := range ch.runningTrackers {
+-		tracker.Stop()
+-	}
+-	ch.runningTrackers = nil
+-}
+-
+ func (ch *CommandHandler) handleSetInterval(code string, chatID int64, commandParam *string) error {
+ 	// Means command was initiated from a menu with a button
+ 	if navigationState := ch.GetUserNavigationState(chatID); navigationState.CallbackMessageID != nil {
+@@ -296,26 +259,24 @@ func (ch *CommandHandler) handleSetInterval(code string, chatID int64, commandPa
+ 		return err
+ 	}
+ 
+-	if newInterval < ch.config.MinInterval {
++	err = ch.trackers.SetInterval(code, newInterval)
++	switch {
++	case errors.Is(err, ErrIntervalBelowMinimum):
+ 		log.Printf("[CommandHandler] Interval %s is below the minimum of %s", newInterval, ch.config.MinInterval)
+ 		ch.handleCommandMessage(chatID, "The interval must be at least "+utilities.DurationToString(ch.config.MinInterval), nil)
+ 
+-		return errors.New("interval below the minimum")
+-	}
+-
+-	if tracker := ch.GetActiveTracker(code); tracker != nil {
+-		tracker.UpdateInterval(newInterval)
+-		ch.saveState()
+-		log.Printf("[CommandHandler] Updated tracker '%s' interval to %s", code, newInterval)
+-		ch.handleCommandMessage(chatID, "Tracker <b>"+code+"</b> run interval successfully updated to "+utilities.DurationToString(newInterval), nil)
++		return err
++	case err != nil:
++		log.Printf("[CommandHandler] Tracker '%s' not found for interval update", code)
++		ch.handleCommandMessage(chatID, "Tracker <b>"+code+"</b> not found, it's probably not running", nil)
+ 
+-		return nil
++		return err
+ 	}
+ 
+-	log.Printf("[CommandHandler] Tracker '%s' not found for interval update", code)
+-	ch.handleCommandMessage(chatID, "Tracker <b>"+code+"</b> not found, it's probably not running", nil)
++	log.Printf("[CommandHandler] Updated tracker '%s' interval to %s", code, newInterval)
++	ch.handleCommandMessage(chatID, "Tracker <b>"+code+"</b> run interval successfully updated to "+utilities.DurationToString(newInterval), nil)
+ 
+-	return errors.New("tracker not found")
++	return nil
+ }
+ 
+ func (ch *CommandHandler) handleMute(code string, chatID int64, commandParam *string) error {
+@@ -327,10 +288,8 @@ func (ch *CommandHandler) handleUnmute(code string, chatID int64, commandParam *
+ }
+ 
+ func (ch *CommandHandler) setNotificationsPaused(code string, chatID int64, commandParam *string, paused bool) error {
+-	tracker := ch.GetActiveTracker(code)
+-	if tracker != nil {
+-		tracker.SetNotificationsPaused(paused)
+-		ch.saveState()
++	err := ch.trackers.SetNotificationsPaused(code, paused)
++	if err == nil {
+ 		log.Printf("[CommandHandler] Tracker '%s' notifications paused: %t", code, paused)
+ 	}
+ 
+@@ -341,10 +300,10 @@ func (ch *CommandHandler) setNotificationsPaused(code string, chatID int64, comm
+ 		return ch.handleStatus(code, chatID, nil)
+ 	}
+ 
+-	if tracker == nil {
++	if err != nil {
+ 		ch.messenger.SendHTML(chatID, "Tracker <b>"+code+"</b> is not running")
+ 
+-		return errors.New("tracker not found")
++		return err
+ 	}
+ 
+ 	ch.messenger.EditMenu(chatID, *callbackMessageID, helpers.GetNotificationMenu(code, paused))
+@@ -382,7 +341,7 @@ func (ch *CommandHandler) handleStatus(code string, chatID int64, _ *string) err
+ 
+ 	statusMenu := &models.InlineKeyboardMarkup{}
+ 
+-	tracker := ch.GetActiveTracker(code)
++	tracker := ch.trackers.Get(code)
+ 	if tracker == nil {
+ 		log.Printf("[CommandHandler] Tracker '%s' is not active", code)
+ 		statusMenu.InlineKeyboard = append(statusMenu.InlineKeyboard, []models.InlineKeyboardButton{helpers.InlineButton("Run tracker", "/run "+code)})
+@@ -476,39 +435,6 @@ func (ch *CommandHandler) handleHelp(code string, chatID int64, _ *string) error
+ 
+ /******************Utility******************/
+ 
+-func (ch *CommandHandler) GetActiveTracker(trackerCode string) *Tracker {
+-	// So that only one goroutine can access the trackers at a time
+-	ch.mu.Lock()
+-	defer ch.mu.Unlock()
+-
+-	for _, tracker := range ch.runningTrackers {
+-		if tracker.Code == trackerCode {
+-			return tracker
+-		}
+-	}
+-
+-	return nil
+-}
+-
+-func (ch *CommandHandler) AddRunningTracker(tracker *Tracker) {
+-	ch.mu.Lock()
+-	defer ch.mu.Unlock()
+-
+-	ch.runningTrackers = append(ch.runningTrackers, tracker)
+-}
+-
+-func (ch *CommandHandler) RemoveRunningTracker(trackerCode string) {
+-	ch.mu.Lock()
+-	defer ch.mu.Unlock()
+-
+-	for i, tracker := range ch.runningTrackers {
+-		if tracker.Code == trackerCode {
+-			ch.runningTrackers = append(ch.runningTrackers[:i], ch.runningTrackers[i+1:]...)
+-			return
+-		}
+-	}
+-}
+-
+ func formatCommandWithParams(command string, params []string, description string) string {
+ 	var builder strings.Builder
+ 	builder.WriteString(" - /" + command)
+@@ -526,7 +452,7 @@ func (ch *CommandHandler) processTrackerStatus(tracker *config.Tracker, menu *mo
+ 	menuRow := []models.InlineKeyboardButton{helpers.InlineButton("Status ["+tracker.Code+"]", "/status "+tracker.Code)}
+ 
+ 	var activeStatus string
+-	if ch.GetActiveTracker(tracker.Code) != nil {
++	if ch.trackers.Get(tracker.Code) != nil {
+ 		activeStatus = "active"
+ 		menuRow = append(menuRow, helpers.InlineButton("Stop ["+tracker.Code+"]", "/stop "+tracker.Code))
+ 	} else {
+diff --git a/handlers/tracker_manager.go b/handlers/tracker_manager.go
+new file mode 100644
+index 0000000..6d31430
+--- /dev/null
++++ b/handlers/tracker_manager.go
+@@ -0,0 +1,247 @@
++package handlers
++
++import (
++	"errors"
++	"fmt"
++	"log"
++	"slices"
++	"strings"
++	"sync"
++	"time"
++
++	"pricetrackerbot/config"
++	"pricetrackerbot/helpers"
++)
++
++var (
++	ErrTrackerAlreadyRunning = errors.New("tracker is already running")
++	ErrTrackerNotRunning     = errors.New("tracker is not running")
++	ErrIntervalBelowMinimum  = errors.New("interval is below the minimum")
++)
++
++// TrackerManager owns the running trackers and keeps the state file in sync with them.
++type TrackerManager struct {
++	config    *config.Configuration
++	messenger helpers.Messenger
++
++	// Also held while saving, so that concurrent changes can't overwrite the state file with an older list
++	mu      sync.Mutex
++	running []*Tracker
++}
++
++func NewTrackerManager(messenger helpers.Messenger, config *config.Configuration) *TrackerManager {
++	return &TrackerManager{config: config, messenger: messenger}
++}
++
++// Get returns the running tracker with this code, or nil.
++func (m *TrackerManager) Get(code string) *Tracker {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++
++	return m.find(code)
++}
++
++// Start creates and starts a tracker for the chat with its configured interval.
++func (m *TrackerManager) Start(code string, chatID int64) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++
++	if err := m.start(code, 0, chatID, false); err != nil {
++		return err
++	}
++
++	m.save()
++
++	return nil
++}
++
++// StartAll starts every configured tracker that isn't running and returns the errors by tracker code.
++func (m *TrackerManager) StartAll(chatID int64) map[string]error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++
++	failed := make(map[string]error)
++
++	for _, trackers := range [][]*config.Tracker{m.config.APITrackers, m.config.ScraperTrackers} {
++		for _, tracker := range trackers {
++			if m.find(tracker.Code) != nil {
++				continue
++			}
++
++			if err := m.start(tracker.Code, 0, chatID, false); err != nil {
++				failed[tracker.Code] = err
++			}
++		}
++	}
++
++	m.save()
++
++	return failed
++}
++
++// Stop stops a running tracker. Returns false if it wasn't running.
++func (m *TrackerManager) Stop(code string) bool {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++
++	index := slices.IndexFunc(m.running, func(t *Tracker) bool { return t.Code == code })
++	if index < 0 {
++		return false
++	}
++
++	m.running[index].Stop()
++	m.running = slices.Delete(m.running, index, index+1)
++	m.save()
++
++	return true
++}
++
++func (m *TrackerManager) StopAll() {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++
++	for _, tracker := range m.running {
++		tracker.Stop()
++	}
++
++	m.running = nil
++	m.save()
++}
++
++func (m *TrackerManager) SetInterval(code string, interval time.Duration) error {
++	if interval < m.config.MinInterval {
++		return ErrIntervalBelowMinimum
++	}
++
++	m.mu.Lock()
++	defer m.mu.Unlock()
++
++	tracker := m.find(code)
++	if tracker == nil {
++		return ErrTrackerNotRunning
++	}
++
++	tracker.UpdateInterval(interval)
++	m.save()
++
++	return nil
++}
++
++func (m *TrackerManager) SetNotificationsPaused(code string, paused bool) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++
++	tracker := m.find(code)
++	if tracker == nil {
++		return ErrTrackerNotRunning
++	}
++
++	tracker.SetNotificationsPaused(paused)
++	m.save()
++
++	return nil
++}
++
++// Resume starts the trackers that were running before the bot was restarted
++// and lets each affected chat know about the restart.
++func (m *TrackerManager) Resume() {
++	saved, err := readStateFile(m.config.StateFile)
++	if err != nil {
++		log.Printf("[State] Failed to read tracker state from %s: %s", m.config.StateFile, err)
++		return
++	}
++
++	resumedPerChat := m.resume(saved)
++
++	for chatID, codes := range resumedPerChat {
++		slices.Sort(codes)
++		message := fmt.Sprintf("The bot was restarted; resumed %d tracker(s): <b>%s</b>", len(codes), strings.Join(codes, ", "))
++		m.messenger.SendHTML(chatID, message)
++	}
++}
++
++func (m *TrackerManager) resume(saved []savedTracker) map[int64][]string {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++
++	resumedPerChat := make(map[int64][]string)
++
++	for _, s := range saved {
++		if !m.config.IsChatAllowed(s.ChatID) {
++			log.Printf("[State] Not resuming tracker '%s': chat %d is not allowed", s.Code, s.ChatID)
++			continue
++		}
++
++		interval, err := time.ParseDuration(s.Interval)
++		if err != nil {
++			log.Printf("[State] Not resuming tracker '%s': invalid interval '%s'", s.Code, s.Interval)
++			continue
++		}
++
++		if err := m.start(s.Code, interval, s.ChatID, s.NotificationsPaused); err != nil {
++			if !errors.Is(err, ErrTrackerAlreadyRunning) {
++				log.Printf("[State] Not resuming tracker '%s': %s", s.Code, err)
++			}
++
++			continue
++		}
++
++		resumedPerChat[s.ChatID] = append(resumedPerChat[s.ChatID], s.Code)
++		log.Printf("[State] Resumed tracker '%s' for chat %d with interval %s", s.Code, s.ChatID, interval)
++	}
++
++	// Drops trackers that could not be resumed (e.g. removed from the configuration)
++	m.save()
++
++	return resumedPerChat
++}
++
++// Callers hold m.mu.
++func (m *TrackerManager) find(code string) *Tracker {
++	for _, tracker := range m.running {
++		if tracker.Code == code {
++			return tracker
++		}
++	}
++
++	return nil
++}
++
++// Creates and starts a tracker; an interval of 0 means the configured default. Notifications are paused before the
++// first run, which starts right away. Callers hold m.mu and save afterwards.
++func (m *TrackerManager) start(code string, interval time.Duration, chatID int64, paused bool) error {
++	if m.find(code) != nil {
++		return ErrTrackerAlreadyRunning
++	}
++
++	tracker, err := CreateTracker(m.messenger, code, interval, m.config, chatID)
++	if err != nil {
++		return err
++	}
++
++	tracker.SetNotificationsPaused(paused)
++	m.running = append(m.running, tracker)
++	tracker.Start()
++	log.Printf("[TrackerManager] Started tracker '%s' for chat %d", code, chatID)
++
++	return nil
++}
++
++// Writes the running trackers to the state file. Errors are logged, not returned: failing to persist state
++// should not fail the command that triggered it. Callers hold m.mu.
++func (m *TrackerManager) save() {
++	saved := make([]savedTracker, 0, len(m.running))
++	for _, tracker := range m.running {
++		status := tracker.Status()
++		saved = append(saved, savedTracker{
++			Code:                tracker.Code,
++			ChatID:              tracker.ChatID(),
++			Interval:            status.CurrentInterval.String(),
++			NotificationsPaused: status.NotificationsPaused,
++		})
++	}
++
++	if err := writeStateFile(m.config.StateFile, saved); err != nil {
++		log.Printf("[State] Failed to save tracker state to %s: %s", m.config.StateFile, err)
++	}
++}
+diff --git a/handlers/tracker_state.go b/handlers/tracker_state.go
+index bfd25d9..ea60d52 100644
+--- a/handlers/tracker_state.go
++++ b/handlers/tracker_state.go
+@@ -5,12 +5,8 @@ import (
+ 	"errors"
+ 	"fmt"
+ 	"io/fs"
+-	"log"
+ 	"os"
+ 	"path/filepath"
+-	"slices"
+-	"strings"
+-	"time"
+ )
+ 
+ const (
+@@ -27,27 +23,6 @@ type savedTracker struct {
+ 	NotificationsPaused bool `json:"notificationsPaused,omitempty"`
+ }
+ 
+-// saveState writes the currently running trackers to the state file. Errors are logged, not returned:
+-// failing to persist state should not fail the command that triggered it.
+-func (ch *CommandHandler) saveState() {
+-	ch.mu.Lock()
+-	saved := make([]savedTracker, 0, len(ch.runningTrackers))
+-	for _, tracker := range ch.runningTrackers {
+-		status := tracker.Status()
+-		saved = append(saved, savedTracker{
+-			Code:                tracker.Code,
+-			ChatID:              tracker.ChatID(),
+-			Interval:            status.CurrentInterval.String(),
+-			NotificationsPaused: status.NotificationsPaused,
+-		})
+-	}
+-	ch.mu.Unlock()
+-
+-	if err := writeStateFile(ch.config.StateFile, saved); err != nil {
+-		log.Printf("[State] Failed to save tracker state to %s: %s", ch.config.StateFile, err)
+-	}
+-}
+-
+ // Writes to a temporary file first and renames it, so a crash mid-write cannot leave a corrupt state file.
+ func writeStateFile(path string, saved []savedTracker) error {
+ 	data, err := json.MarshalIndent(saved, "", "  ")
+@@ -84,53 +59,3 @@ func readStateFile(path string) ([]savedTracker, error) {
+ 
+ 	return saved, nil
+ }
+-
+-// ResumeTrackers starts the trackers that were running before the bot was restarted
+-// and lets each affected chat know about the restart.
+-func (ch *CommandHandler) ResumeTrackers() {
+-	saved, err := readStateFile(ch.config.StateFile)
+-	if err != nil {
+-		log.Printf("[State] Failed to read tracker state from %s: %s", ch.config.StateFile, err)
+-		return
+-	}
+-
+-	resumedPerChat := make(map[int64][]string)
+-
+-	for _, s := range saved {
+-		if !ch.config.IsChatAllowed(s.ChatID) {
+-			log.Printf("[State] Not resuming tracker '%s': chat %d is not allowed", s.Code, s.ChatID)
+-			continue
+-		}
+-
+-		if ch.GetActiveTracker(s.Code) != nil {
+-			continue
+-		}
+-
+-		interval, err := time.ParseDuration(s.Interval)
+-		if err != nil {
+-			log.Printf("[State] Not resuming tracker '%s': invalid interval '%s'", s.Code, s.Interval)
+-			continue
+-		}
+-
+-		tracker, err := CreateTracker(ch.messenger, s.Code, interval, ch.config, s.ChatID)
+-		if err != nil {
+-			log.Printf("[State] Not resuming tracker '%s': %s", s.Code, err)
+-			continue
+-		}
+-
+-		tracker.SetNotificationsPaused(s.NotificationsPaused)
+-		ch.AddRunningTracker(tracker)
+-		tracker.Start()
+-		resumedPerChat[s.ChatID] = append(resumedPerChat[s.ChatID], s.Code)
+-		log.Printf("[State] Resumed tracker '%s' for chat %d with interval %s", s.Code, s.ChatID, interval)
+-	}
+-
+-	// Drops trackers that could not be resumed (e.g. removed from the configuration)
+-	ch.saveState()
+-
+-	for chatID, codes := range resumedPerChat {
+-		slices.Sort(codes)
+-		message := fmt.Sprintf("The bot was restarted; resumed %d tracker(s): <b>%s</b>", len(codes), strings.Join(codes, ", "))
+-		ch.messenger.SendHTML(chatID, message)
+-	}
+-}

@@ -1,0 +1,350 @@
+diff --git a/botfixer/bot_fixer_test.go b/botfixer/bot_fixer_test.go
+index 4845e72..3ae4387 100644
+--- a/botfixer/bot_fixer_test.go
++++ b/botfixer/bot_fixer_test.go
+@@ -203,7 +203,8 @@ func newTestConfig(t *testing.T, stateFile string) *config.Configuration {
+ 		ErrorNotifyLimit: 3,
+ 		AllowedChatIDs:   []int64{allowedChatID},
+ 		StateFile:        stateFile,
+-		APITrackers: []*config.Tracker{{
++		Trackers: []*config.Tracker{{
++			Type:               config.TrackerTypeAPI,
+ 			Code:               "bonds",
+ 			DataURL:            api.URL,
+ 			ViewURL:            "https://example.com/bonds",
+diff --git a/config/config.go b/config/config.go
+index 5a70119..0aa38a1 100644
+--- a/config/config.go
++++ b/config/config.go
+@@ -21,7 +21,16 @@ type NotifyCriteria struct {
+ 	Value    string `json:"value" validate:"required,numeric"`
+ }
+ 
++// TrackerType says how a tracker reads its value; it comes from the file the tracker is loaded from.
++type TrackerType string
++
++const (
++	TrackerTypeAPI     TrackerType = "api"
++	TrackerTypeScraper TrackerType = "scraper"
++)
++
+ type Tracker struct {
++	Type               TrackerType      `json:"-"`
+ 	Code               string           `json:"code" validate:"required,excludesall=_/ "`
+ 	DataURL            string           `json:"dataUrl" validate:"required,url"`
+ 	ViewURL            string           `json:"viewUrl" validate:"omitempty,url"`
+@@ -40,11 +49,11 @@ type Configuration struct {
+ 	BotAPIKey        string `validate:"required"`
+ 	ErrorNotifyLimit int    `validate:"min=1"`
+ 	// The shortest run interval a tracker may use, so that tracked sites aren't requested too often
+-	MinInterval     time.Duration
+-	AllowedChatIDs  []int64
+-	StateFile       string     `validate:"required"`
+-	APITrackers     []*Tracker `validate:"dive"`
+-	ScraperTrackers []*Tracker `validate:"dive"`
++	MinInterval    time.Duration
++	AllowedChatIDs []int64
++	StateFile      string `validate:"required"`
++	// API trackers in file order, then scraper trackers
++	Trackers []*Tracker `validate:"dive"`
+ }
+ 
+ var config *Configuration
+@@ -99,21 +108,48 @@ func loadConfig() (*Configuration, error) {
+ 		return nil, fmt.Errorf("error parsing ALLOWED_CHAT_IDS: %w", err)
+ 	}
+ 
+-	if cfg.APITrackers, err = loadTrackers("API_TRACKERS_FILE"); err != nil {
+-		return nil, fmt.Errorf("error loading API trackers: %w", err)
+-	}
++	for _, source := range trackerFiles {
++		trackers, err := loadTrackers(source.fileVar, source.trackerType)
++		if err != nil {
++			return nil, fmt.Errorf("error loading %s trackers: %w", source.trackerType, err)
++		}
+ 
+-	if cfg.ScraperTrackers, err = loadTrackers("SCRAPER_TRACKERS_FILE"); err != nil {
+-		return nil, fmt.Errorf("error loading scraper trackers: %w", err)
++		cfg.Trackers = append(cfg.Trackers, trackers...)
+ 	}
+ 
+-	if len(cfg.APITrackers) == 0 && len(cfg.ScraperTrackers) == 0 {
++	if len(cfg.Trackers) == 0 {
+ 		return nil, errors.New("no trackers defined in the configuration")
+ 	}
+ 
++	if code, found := duplicateCode(cfg.Trackers); found {
++		return nil, fmt.Errorf("tracker code '%s' is defined more than once", code)
++	}
++
+ 	return cfg, nil
+ }
+ 
++// The env var naming each tracker file and the type of the trackers in it, in loading order.
++var trackerFiles = []struct {
++	fileVar     string
++	trackerType TrackerType
++}{
++	{fileVar: "API_TRACKERS_FILE", trackerType: TrackerTypeAPI},
++	{fileVar: "SCRAPER_TRACKERS_FILE", trackerType: TrackerTypeScraper},
++}
++
++func duplicateCode(trackers []*Tracker) (string, bool) {
++	seen := make(map[string]bool, len(trackers))
++	for _, tracker := range trackers {
++		if seen[tracker.Code] {
++			return tracker.Code, true
++		}
++
++		seen[tracker.Code] = true
++	}
++
++	return "", false
++}
++
+ // Returns the configured error notification limit, or the default of 3 when it's not set.
+ func parseErrorNotifyLimit(value string) (int, error) {
+ 	if value == "" {
+@@ -141,7 +177,7 @@ func parseMinInterval(value string) (time.Duration, error) {
+ 	return interval, nil
+ }
+ 
+-func loadTrackers(fileVar string) ([]*Tracker, error) {
++func loadTrackers(fileVar string, trackerType TrackerType) ([]*Tracker, error) {
+ 	// Check if a file path is provided
+ 	filePath := os.Getenv(fileVar)
+ 	if filePath != "" {
+@@ -155,6 +191,10 @@ func loadTrackers(fileVar string) ([]*Tracker, error) {
+ 			return nil, errors.New("failed to parse JSON from file")
+ 		}
+ 
++		for _, tracker := range trackers {
++			tracker.Type = trackerType
++		}
++
+ 		return trackers, nil
+ 	}
+ 
+@@ -198,18 +238,8 @@ func (c *Configuration) ValidateConfig() {
+ 	}
+ }
+ 
+-func (c *Configuration) GetAPITrackerData(code string) *Tracker {
+-	for _, tracker := range c.APITrackers {
+-		if tracker.Code == code {
+-			return tracker
+-		}
+-	}
+-
+-	return nil
+-}
+-
+-func (c *Configuration) GetScraperTrackerData(code string) *Tracker {
+-	for _, tracker := range c.ScraperTrackers {
++func (c *Configuration) GetTrackerData(code string) *Tracker {
++	for _, tracker := range c.Trackers {
+ 		if tracker.Code == code {
+ 			return tracker
+ 		}
+@@ -217,11 +247,3 @@ func (c *Configuration) GetScraperTrackerData(code string) *Tracker {
+ 
+ 	return nil
+ }
+-
+-func (c *Configuration) GetTrackerData(code string) *Tracker {
+-	if tracker := c.GetAPITrackerData(code); tracker != nil {
+-		return tracker
+-	}
+-
+-	return c.GetScraperTrackerData(code)
+-}
+diff --git a/config/config_test.go b/config/config_test.go
+index ee571b2..5c05a8b 100644
+--- a/config/config_test.go
++++ b/config/config_test.go
+@@ -75,8 +75,8 @@ func TestLoadConfig(t *testing.T) {
+ 			t.Errorf("unexpected defaults: %+v", cfg)
+ 		}
+ 
+-		if len(cfg.APITrackers) != 1 || cfg.APITrackers[0].Code != "bonds" {
+-			t.Errorf("trackers not loaded: %+v", cfg.APITrackers)
++		if len(cfg.Trackers) != 1 || cfg.Trackers[0].Code != "bonds" {
++			t.Errorf("trackers not loaded: %+v", cfg.Trackers)
+ 		}
+ 	})
+ 
+@@ -115,3 +115,29 @@ func TestLoadConfig(t *testing.T) {
+ 		})
+ 	}
+ }
++
++func TestDuplicateCode(t *testing.T) {
++	tests := []struct {
++		name  string
++		codes []string
++		want  string
++	}{
++		{name: "unique", codes: []string{"a", "b", "c"}},
++		{name: "repeated", codes: []string{"a", "b", "a"}, want: "a"},
++		{name: "empty", codes: nil},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			trackers := make([]*Tracker, 0, len(tt.codes))
++			for _, code := range tt.codes {
++				trackers = append(trackers, &Tracker{Code: code})
++			}
++
++			code, found := duplicateCode(trackers)
++			if found != (tt.want != "") || code != tt.want {
++				t.Errorf("duplicateCode(%v) = %q, %v; want %q", tt.codes, code, found, tt.want)
++			}
++		})
++	}
++}
+diff --git a/handlers/command_handler.go b/handlers/command_handler.go
+index 987872c..b6e0966 100644
+--- a/handlers/command_handler.go
++++ b/handlers/command_handler.go
+@@ -170,13 +170,7 @@ func (ch *CommandHandler) startTracker(trackerCode string, chatID int64, errors
+ func (ch *CommandHandler) startAllTrackers(chatID int64) {
+ 	errors := make(map[string]error)
+ 
+-	for _, tracker := range ch.config.APITrackers {
+-		if tr := ch.GetActiveTracker(tracker.Code); tr == nil {
+-			ch.startTracker(tracker.Code, chatID, errors)
+-		}
+-	}
+-
+-	for _, tracker := range ch.config.ScraperTrackers {
++	for _, tracker := range ch.config.Trackers {
+ 		if tr := ch.GetActiveTracker(tracker.Code); tr == nil {
+ 			ch.startTracker(tracker.Code, chatID, errors)
+ 		}
+@@ -359,14 +353,9 @@ func (ch *CommandHandler) handleStatus(code string, chatID int64, _ *string) err
+ 
+ 		var builder strings.Builder
+ 		builder.WriteString("<b>All available trackers</b>\n\n")
+-		for _, tracker := range ch.config.APITrackers {
+-			activeStatus := ch.processTrackerStatus(tracker, statusMenu)
+-			fmt.Fprintf(&builder, " - %s | %s | api\n", tracker.Code, activeStatus)
+-		}
+-
+-		for _, tracker := range ch.config.ScraperTrackers {
++		for _, tracker := range ch.config.Trackers {
+ 			activeStatus := ch.processTrackerStatus(tracker, statusMenu)
+-			fmt.Fprintf(&builder, " - %s | %s | scraper\n", tracker.Code, activeStatus)
++			fmt.Fprintf(&builder, " - %s | %s | %s\n", tracker.Code, activeStatus, tracker.Type)
+ 		}
+ 
+ 		// If we are navigating back to the status menu after a back button click, edit the existing message instead of sending a new one.
+diff --git a/handlers/tracker.go b/handlers/tracker.go
+index 3294900..9ddeb45 100644
+--- a/handlers/tracker.go
++++ b/handlers/tracker.go
+@@ -15,9 +15,6 @@ import (
+ )
+ 
+ const (
+-	API     = "api"
+-	Scraper = "scraper"
+-
+ 	// How many of the most recent execution errors are kept for a tracker.
+ 	executionErrorHistory = 20
+ 
+@@ -29,6 +26,12 @@ const (
+ 
+ var errUnrecognizedTracker = errors.New("unrecognized tracker code")
+ 
++// Behavior constructors by tracker type; a new tracker type only needs an entry here.
++var trackerBehaviors = map[config.TrackerType]func() TrackerBehavior{
++	config.TrackerTypeAPI:     func() TrackerBehavior { return NewAPITrackerBehavior() },
++	config.TrackerTypeScraper: func() TrackerBehavior { return NewScraperTrackerBehavior() },
++}
++
+ type TrackerStatus struct {
+ 	StartTimestamp    time.Time
+ 	LastRunTimestamp  time.Time
+@@ -67,23 +70,16 @@ type Tracker struct {
+ }
+ 
+ func CreateTracker(messenger helpers.Messenger, code string, runInterval time.Duration, config *config.Configuration, chatID int64) (*Tracker, error) {
+-	var behavior TrackerBehavior
+-	trackerType := DetermineTrackerType(code, config)
+ 	trackerData := config.GetTrackerData(code)
+-
+ 	if trackerData == nil {
+ 		log.Printf("[Tracker] Failed to create a new tracker: %s; no such tracker found in configuration", code)
+ 
+ 		return nil, errUnrecognizedTracker
+ 	}
+ 
+-	switch trackerType {
+-	case API:
+-		behavior = NewAPITrackerBehavior()
+-	case Scraper:
+-		behavior = NewScraperTrackerBehavior()
+-	default:
+-		return nil, fmt.Errorf("unsupported client type for code: %s", code)
++	newBehavior, ok := trackerBehaviors[trackerData.Type]
++	if !ok {
++		return nil, fmt.Errorf("unsupported tracker type '%s' for code: %s", trackerData.Type, code)
+ 	}
+ 
+ 	// If runInterval is not provided, use the default interval from the configuration
+@@ -105,7 +101,7 @@ func CreateTracker(messenger helpers.Messenger, code string, runInterval time.Du
+ 	return &Tracker{
+ 		Code:        code,
+ 		trackerData: trackerData,
+-		Behavior:    behavior,
++		Behavior:    newBehavior(),
+ 		chatID:      chatID,
+ 		messenger:   messenger,
+ 		errorLimit:  config.ErrorNotifyLimit,
+@@ -296,19 +292,3 @@ func (t *Tracker) UpdateInterval(newInterval time.Duration) {
+ 
+ 	t.Start()
+ }
+-
+-func DetermineTrackerType(trackerCode string, config *config.Configuration) string {
+-	for _, tracker := range config.APITrackers {
+-		if tracker.Code == trackerCode {
+-			return API
+-		}
+-	}
+-
+-	for _, tracker := range config.ScraperTrackers {
+-		if tracker.Code == trackerCode {
+-			return Scraper
+-		}
+-	}
+-
+-	return ""
+-}
+diff --git a/handlers/tracker_test.go b/handlers/tracker_test.go
+index 20ef185..38e2a46 100644
+--- a/handlers/tracker_test.go
++++ b/handlers/tracker_test.go
+@@ -253,7 +253,7 @@ func TestTrackerBacksOffWhenBlocked(t *testing.T) {
+ func TestCreateTrackerRaisesIntervalToMinimum(t *testing.T) {
+ 	cfg := &config.Configuration{
+ 		MinInterval: 10 * time.Minute,
+-		APITrackers: []*config.Tracker{{Code: "bonds", DataURL: "https://example.com", Interval: "1m", DataExtractionPath: "price"}},
++		Trackers:    []*config.Tracker{{Type: config.TrackerTypeAPI, Code: "bonds", DataURL: "https://example.com", Interval: "1m", DataExtractionPath: "price"}},
+ 	}
+ 
+ 	// Once from the configured default, once from a restored state interval
+diff --git a/tracker_configs/README.md b/tracker_configs/README.md
+index 5556797..50d64b4 100644
+--- a/tracker_configs/README.md
++++ b/tracker_configs/README.md
+@@ -7,7 +7,7 @@ Both files have the same structure:
+ ```
+ [
+    {
+-     "code": "<string> an arbitrary value that identifies the tracker; must be unique; cannot contain '_', '/' or ' ' (space)",
++     "code": "<string> an arbitrary value that identifies the tracker; must be unique across both files (the bot refuses to start on a duplicate); cannot contain '_', '/' or ' ' (space)",
+      "dataUrl": "<string> the URL the value is read from: an API endpoint for API trackers, a web page for scraper trackers",
+      "viewUrl": "<string, optional> the website URL linked in the notification message",
+      "interval": "<string> default run interval, e.g. '1h'; available interval types: 'm' - minutes, 'h' - hours, 'd' - days; values below MIN_INTERVAL are raised to it",
