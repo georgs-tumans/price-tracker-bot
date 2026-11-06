@@ -3,10 +3,8 @@ package handlers
 import (
 	"fmt"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"pricetrackerbot/clients"
 	"pricetrackerbot/config"
-	"pricetrackerbot/helpers"
 )
 
 /*
@@ -17,58 +15,44 @@ to add new ways of fetching data without changing the existing code.
 It is NOT meant for implementing the data fetching logic itself - that will be done in the clients.
 */
 type TrackerBehavior interface {
-	Execute(trackerData *config.Tracker, chatID int64) (string, error)
+	// Returns the recorded value and the notification message to send (empty if no criteria are met).
+	Execute(trackerData *config.Tracker) (value string, notification string, err error)
 }
 
 type APITrackerBehavior struct {
-	bot    *tgbotapi.BotAPI
 	client *clients.PublicAPIClient
 }
 
-func NewAPITrackerBehavior(bot *tgbotapi.BotAPI) *APITrackerBehavior {
+func NewAPITrackerBehavior() *APITrackerBehavior {
 	return &APITrackerBehavior{
-		bot:    bot,
 		client: clients.NewPublicAPIClient(),
 	}
 }
 
-func (tb *APITrackerBehavior) Execute(trackerData *config.Tracker, chatID int64) (string, error) {
+func (tb *APITrackerBehavior) Execute(trackerData *config.Tracker) (string, string, error) {
 	result, err := tb.client.FetchAndExtractData(trackerData)
 	if err != nil {
-		// Notify the user? Add to some failure statistics?
-		return "", err
+		return "", "", err
 	}
 
-	if result.NotificationMessage != "" {
-		helpers.SendMessageHTML(tb.bot, chatID, result.NotificationMessage, nil)
-	}
-
-	return fmt.Sprintf("%.2f", result.CurrentValue), nil
+	return fmt.Sprintf("%.2f", result.CurrentValue), result.NotificationMessage, nil
 }
 
 type ScraperTrackerBehavior struct {
-	bot    *tgbotapi.BotAPI
 	client *clients.ScraperClient
 }
 
-func NewScraperTrackerBehavior(bot *tgbotapi.BotAPI) *ScraperTrackerBehavior {
+func NewScraperTrackerBehavior() *ScraperTrackerBehavior {
 	return &ScraperTrackerBehavior{
-		bot:    bot,
 		client: clients.NewScraperClient(),
 	}
 }
 
-func (tb *ScraperTrackerBehavior) Execute(trackerData *config.Tracker, chatID int64) (string, error) {
+func (tb *ScraperTrackerBehavior) Execute(trackerData *config.Tracker) (string, string, error) {
 	result, err := tb.client.FetchAndExtractData(trackerData)
 	if err != nil {
-		// Notify the user? Add to some failure statistics?
-		return "", err
+		return "", "", err
 	}
 
-	if result.NotificationMessage != "" {
-		helpers.SendMessageHTML(tb.bot, chatID, result.NotificationMessage, nil)
-	}
-
-	return fmt.Sprintf("%.2f", result.CurrentValue), nil
-	// return "", nil
+	return fmt.Sprintf("%.2f", result.CurrentValue), result.NotificationMessage, nil
 }

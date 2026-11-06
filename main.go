@@ -1,12 +1,18 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
-	"strings"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"pricetrackerbot/botfixer"
 )
+
+// Release version, set at build time with -ldflags "-X main.version=..."; "dev" for local builds.
+var version = "dev"
 
 func main() {
 	defer func() {
@@ -18,16 +24,10 @@ func main() {
 		}
 	}()
 
-	log.Println("Starting bot service")
-	botFixer := botfixer.NewBotFixer()
-	config := botFixer.Config
+	// Stop cleanly on Ctrl+C and on `docker stop`
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	if strings.ToLower(strings.TrimSpace(config.Environment)) == "local" {
-		if err := botFixer.DeleteWebhook(); err != nil {
-			log.Printf("[main] Error deleting webhook: %v", err)
-		}
-		botFixer.InitializeBotLongPolling()
-	} else {
-		botFixer.InitializeBotWebhook()
-	}
+	log.Printf("Starting bot service (version %s)", version)
+	botfixer.NewBotFixer().Run(ctx)
 }
