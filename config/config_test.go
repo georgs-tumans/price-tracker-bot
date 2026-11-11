@@ -4,8 +4,11 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-playground/validator/v10"
 )
 
 func TestParseChatIDs(t *testing.T) {
@@ -113,5 +116,41 @@ func TestLoadConfig(t *testing.T) {
 				t.Error("expected an error")
 			}
 		})
+	}
+}
+
+func TestValidateNotifyCriteria(t *testing.T) {
+	tests := []struct {
+		name     string
+		criteria []NotifyCriteria
+		wantErr  bool
+	}{
+		{name: "none", criteria: nil},
+		{name: "valid", criteria: []NotifyCriteria{{Operator: ">=", Value: "100"}, {Operator: "<", Value: "-2.5"}}},
+		{name: "unknown operator", criteria: []NotifyCriteria{{Operator: "!=", Value: "1"}}, wantErr: true},
+		{name: "not a number", criteria: []NotifyCriteria{{Operator: "<", Value: "cheap"}}, wantErr: true},
+		{name: "missing value", criteria: []NotifyCriteria{{Operator: "<"}}, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := ValidateNotifyCriteria(tt.criteria); (err != nil) != tt.wantErr {
+				t.Errorf("ValidateNotifyCriteria() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// Longer codes would push the criteria buttons past Telegram's 64-byte limit for button data.
+func TestTrackerCodeLength(t *testing.T) {
+	validate := validator.New()
+
+	for _, length := range []int{MaxTrackerCodeLength, MaxTrackerCodeLength + 1} {
+		tracker := Tracker{Code: strings.Repeat("a", length), DataURL: "https://example.com", Interval: "1h", DataExtractionPath: "price"}
+		err := validate.Struct(&tracker)
+
+		if wantErr := length > MaxTrackerCodeLength; (err != nil) != wantErr {
+			t.Errorf("code of %d characters: error = %v, wantErr %v", length, err, wantErr)
+		}
 	}
 }

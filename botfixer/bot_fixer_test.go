@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -326,9 +327,44 @@ func TestBotEndToEnd(t *testing.T) {
 		return textContains("editMessageText", "Notifications: paused")(c) && strings.Contains(c.Fields["reply_markup"], `"callback_data":"/unmute bonds"`)
 	})
 	fake.queueButtonClick(allowedChatID, 42, "/unmute bonds")
-	fake.waitForCall("status shows on", func(c apiCall) bool {
-		return textContains("editMessageText", "Notifications: on")(c) && strings.Contains(c.Fields["reply_markup"], `"callback_data":"/mute bonds"`)
+	fake.waitForCall("status shows on and offers a reset of the changed interval", func(c apiCall) bool {
+		return textContains("editMessageText", "Notifications: on")(c) && strings.Contains(c.Fields["reply_markup"], `"callback_data":"/mute bonds"`) &&
+			strings.Contains(c.Fields["reply_markup"], `"callback_data":"/reset bonds"`)
 	})
+
+	// Resetting brings back the configured interval and re-renders the status page
+	fake.queueButtonClick(allowedChatID, 42, "/reset bonds")
+	fake.waitForCall("status after reset", func(c apiCall) bool {
+		return textContains("editMessageText", "Current run interval: 1h 0m 0s\n")(c) && !strings.Contains(c.Fields["reply_markup"], "/reset bonds")
+	})
+
+	data, _ = os.ReadFile(stateFile)
+	if strings.Contains(string(data), `"interval"`) {
+		t.Errorf("state file still contains the reset interval: %s", data)
+	}
+
+	// Editing a criterion: the criteria page, its edit button, a prompt with suggestions, then the typed value
+	fake.queueButtonClick(allowedChatID, 42, "/criteria bonds")
+	page := fake.waitForCall("criteria page", textContains("editMessageText", "Notify criteria for bonds"))
+	editButton := regexp.MustCompile(`/criteria bonds edit 1 v[0-9a-f]{4}`).FindString(page.Fields["reply_markup"])
+	if editButton == "" {
+		t.Fatalf("criteria page is missing the edit button: %s", page.Fields["reply_markup"])
+	}
+
+	fake.queueButtonClick(allowedChatID, 42, editButton)
+	criterionPrompt := fake.waitForCall("criterion prompt", textContains("sendMessage", "Send me the new criterion #1"))
+	// The bot library's JSON encoder escapes "<" as \u003c
+	if !strings.Contains(criterionPrompt.Fields["reply_markup"], `"text":"\u003c 5"`) {
+		t.Errorf("criterion prompt is missing the suggestions: %s", criterionPrompt.Fields["reply_markup"])
+	}
+
+	fake.queueMessage(allowedChatID, "8")
+	fake.waitForCall("criterion changed", textContains("sendMessage", "Criterion #1 is now: tracked value &lt; 8"))
+
+	data, _ = os.ReadFile(stateFile)
+	if !strings.Contains(string(data), `"value": "8"`) {
+		t.Errorf("state file does not contain the changed criterion: %s", data)
+	}
 
 	// "Return" goes back to the previous menu
 	fake.queueButtonClick(allowedChatID, 42, "/status")

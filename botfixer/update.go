@@ -101,7 +101,7 @@ func (b *BotFixer) handleMessage(message *models.Message) {
 	}
 
 	// Handle user input after a certain command/action has requested it
-	if b.CommandHandler.GetUserNavigationState(chatID).AwaitingUserInput {
+	if b.CommandHandler.GetUserNavigationState(chatID).AwaitingUserInput() {
 		b.CommandHandler.GetUserNavigationState(chatID).BackButtonEnabled = true
 		if err := b.CommandHandler.HandleUserInput(chatID, text, nil); err != nil {
 			log.Printf("[Bot fixer] An error occurred while handling user input: %s", err.Error())

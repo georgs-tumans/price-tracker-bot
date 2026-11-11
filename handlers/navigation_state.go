@@ -2,11 +2,17 @@ package handlers
 
 // NavigationState holds the menu/conversation state of a single chat.
 type NavigationState struct {
-	CallbackMessageID    *int
-	BackButtonEnabled    bool
-	AwaitingUserInput    bool // A command has asked the user to type in a value
+	CallbackMessageID *int
+	BackButtonEnabled bool
+	// The command that the user's next text message completes, e.g. "/interval bonds"; empty when not asking
+	PendingCommand       string
 	CustomKeyboardActive bool // A custom reply keyboard is shown and must be removed after the input
 	navigationStack      []*Command
+}
+
+// AwaitingUserInput reports whether a command has asked the user to type in a value.
+func (ns *NavigationState) AwaitingUserInput() bool {
+	return ns.PendingCommand != ""
 }
 
 func (ns *NavigationState) Push(state *Command) {

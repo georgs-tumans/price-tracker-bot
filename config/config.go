@@ -21,8 +21,12 @@ type NotifyCriteria struct {
 	Value    string `json:"value" validate:"required,numeric"`
 }
 
+// MaxTrackerCodeLength keeps the bot's buttons, which contain the tracker code, within Telegram's 64-byte limit
+// for button data. Keep it in sync with the "max" rule of Tracker.Code.
+const MaxTrackerCodeLength = 40
+
 type Tracker struct {
-	Code               string           `json:"code" validate:"required,excludesall=_/ "`
+	Code               string           `json:"code" validate:"required,max=40,excludesall=_/ "`
 	DataURL            string           `json:"dataUrl" validate:"required,url"`
 	ViewURL            string           `json:"viewUrl" validate:"omitempty,url"`
 	Interval           string           `json:"interval" validate:"required"`
@@ -196,6 +200,19 @@ func (c *Configuration) ValidateConfig() {
 	if err := validate.Struct(c); err != nil {
 		log.Fatalf("[GetConfig] Config validation error: %v", err)
 	}
+}
+
+// Validates criteria that don't come from the tracker files (e.g. the saved state)
+// against the same rules as the tracker files.
+func ValidateNotifyCriteria(criteria []NotifyCriteria) error {
+	validate := validator.New()
+	for i := range criteria {
+		if err := validate.Struct(&criteria[i]); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (c *Configuration) GetAPITrackerData(code string) *Tracker {

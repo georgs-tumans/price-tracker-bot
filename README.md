@@ -41,9 +41,18 @@ General commands:
  - `/run <tracker_code>` - starts a tracker
  - `/stop <tracker_code>` - stops a tracker
  - `/status <tracker_code>` - prints tracker status
- - `/interval <tracker_code> <interval_value>` - sets tracker run interval. Example command: `/interval bonds 1h`. Available interval types: 'm'(minute), 'h'(hour), 'd'(day). Intervals below `MIN_INTERVAL` (default 10m) are rejected, see [Avoiding getting blocked](#avoiding-getting-blocked)
+ - `/interval <tracker_code> <interval_value>` - sets tracker run interval, also for a stopped tracker. Example command: `/interval bonds 1h`. Available interval types: 'm'(minute), 'h'(hour), 'd'(day). Intervals below `MIN_INTERVAL` (default 10m) are rejected, see [Avoiding getting blocked](#avoiding-getting-blocked)
+ - `/criteria <tracker_code>` - lists the notify criteria with buttons to edit, delete and add them; works for stopped trackers too. Typed changes:
+   - `/criteria bonds add <= 45.5` - adds a criterion: an operator (`<`, `<=`, `=`, `>=`, `>`) and a number; a decimal comma and spaces are fine
+   - `/criteria bonds edit 1 >= 120` - replaces criterion 1; `/criteria bonds edit 1 120` keeps its operator
+   - `/criteria bonds del 1` - removes criterion 1; a tracker without criteria runs but never notifies
+
+   Changes go to a running tracker right away and are checked against its last recorded value ("it is already met"). When editing from the menu, the bot suggests values around the last recorded one. A tracker can have at most 10 criteria. Buttons on an older message don't change criteria that were changed since.
+ - `/reset <tracker_code>` - sets the run interval and notify criteria back to the tracker config. Also available as a "Reset to config" button on the tracker status page and the criteria page when something was changed
  - `/mute <tracker_code>` - pauses the tracker's notifications (the tracker keeps running). Also available as a button on the tracker status page and on every notification
  - `/unmute <tracker_code>` - resumes the tracker's notifications. Notifications are on by default for newly started trackers
+
+Settings changed through the bot (run interval, notify criteria) are kept when the tracker is stopped and run again, and after a restart, until `/reset`. Setting a value equal to the tracker config counts as no change, so later edits of the tracker config apply to it. Muting is not a setting: a stopped and restarted tracker has its notifications on.
 
 ## Preconditions
 
@@ -63,7 +72,7 @@ General commands:
 
 The bot receives updates from Telegram via **long polling**: it keeps a request open to Telegram's servers and gets new messages as soon as they arrive. It only makes outgoing connections, so it needs no public URL, HTTPS certificate, port forwarding or tunnel, and it works the same on a home server as on a laptop.
 
-Running trackers are saved to a state file (`STATE_FILE`). After a restart (crash, deploy, server reboot) the bot resumes them and sends a "the bot was restarted" message to the chats they belong to.
+Running trackers and settings changed through the bot are saved to a state file (`STATE_FILE`). After a restart (crash, deploy, server reboot) the bot resumes the running trackers and sends a "the bot was restarted" message to the chats they belong to. State files from older versions are read and converted on the next save; an older bot version can't read the new format and starts with no trackers running (it logs the error).
 
 ### Avoiding getting blocked
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"sync"
 	"time"
 
@@ -37,6 +38,7 @@ type TrackerStatus struct {
 	ConsecutiveErrors int
 	LastRecordedValue string
 	CurrentInterval   time.Duration
+	NotifyCriteria    []config.NotifyCriteria
 	// How many runs in a row the site responded with a blocking status code (403, 429, 503); 0 when not backing off
 	BackoffLevel     int
 	NextRunTimestamp time.Time
@@ -66,7 +68,8 @@ type Tracker struct {
 	cancel     context.CancelFunc // nil while the tracker is not running
 }
 
-func CreateTracker(messenger helpers.Messenger, code string, runInterval time.Duration, config *config.Configuration, chatID int64) (*Tracker, error) {
+// CreateTracker creates a stopped tracker. Settings the user changed through the bot win over the configured ones.
+func CreateTracker(messenger helpers.Messenger, code string, settings TrackerSettings, config *config.Configuration, chatID int64) (*Tracker, error) {
 	var behavior TrackerBehavior
 	trackerType := DetermineTrackerType(code, config)
 	trackerData := config.GetTrackerData(code)
@@ -86,8 +89,7 @@ func CreateTracker(messenger helpers.Messenger, code string, runInterval time.Du
 		return nil, fmt.Errorf("unsupported client type for code: %s", code)
 	}
 
-	// If runInterval is not provided, use the default interval from the configuration
-	runIntervalToUse := runInterval
+	runIntervalToUse := settings.Interval
 	if runIntervalToUse == 0 {
 		var err error
 		runIntervalToUse, err = utilities.ParseDurationWithDays(trackerData.Interval)
@@ -102,6 +104,11 @@ func CreateTracker(messenger helpers.Messenger, code string, runInterval time.Du
 		runIntervalToUse = config.MinInterval
 	}
 
+	notifyCriteria := trackerData.NotifyCriteria
+	if settings.NotifyCriteria != nil {
+		notifyCriteria = *settings.NotifyCriteria
+	}
+
 	return &Tracker{
 		Code:        code,
 		trackerData: trackerData,
@@ -111,6 +118,7 @@ func CreateTracker(messenger helpers.Messenger, code string, runInterval time.Du
 		errorLimit:  config.ErrorNotifyLimit,
 		status: TrackerStatus{
 			CurrentInterval: runIntervalToUse,
+			NotifyCriteria:  slices.Clone(notifyCriteria),
 		},
 	}, nil
 }
@@ -122,6 +130,7 @@ func (t *Tracker) Status() TrackerStatus {
 
 	status := t.status
 	status.ExecutionErrors = append([]*TrackerExecutionError(nil), t.status.ExecutionErrors...)
+	status.NotifyCriteria = slices.Clone(t.status.NotifyCriteria)
 
 	return status
 }
@@ -137,6 +146,14 @@ func (t *Tracker) SetNotificationsPaused(paused bool) {
 	t.status.NotificationsPaused = paused
 }
 
+// SetNotifyCriteria replaces the criteria from the next run on; a run in progress finishes with the old ones.
+func (t *Tracker) SetNotifyCriteria(criteria []config.NotifyCriteria) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.status.NotifyCriteria = slices.Clone(criteria)
+}
+
 func (t *Tracker) executeTrackerLogic() {
 	// A panic in a single run must not take down the whole bot
 	defer func() {
@@ -146,7 +163,13 @@ func (t *Tracker) executeTrackerLogic() {
 		}
 	}()
 
-	value, notification, err := t.Behavior.Execute(t.trackerData)
+	// The run gets its own copy, so the criteria can be changed while it is in progress
+	t.mu.Lock()
+	trackerData := *t.trackerData
+	trackerData.NotifyCriteria = slices.Clone(t.status.NotifyCriteria)
+	t.mu.Unlock()
+
+	value, notification, err := t.Behavior.Execute(&trackerData)
 	if err != nil {
 		log.Printf("[Tracker] Error executing tracker '%s': %s", t.Code, err)
 		t.recordError(err)
