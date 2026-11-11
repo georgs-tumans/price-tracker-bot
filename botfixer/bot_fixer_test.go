@@ -326,9 +326,21 @@ func TestBotEndToEnd(t *testing.T) {
 		return textContains("editMessageText", "Notifications: paused")(c) && strings.Contains(c.Fields["reply_markup"], `"callback_data":"/unmute bonds"`)
 	})
 	fake.queueButtonClick(allowedChatID, 42, "/unmute bonds")
-	fake.waitForCall("status shows on", func(c apiCall) bool {
-		return textContains("editMessageText", "Notifications: on")(c) && strings.Contains(c.Fields["reply_markup"], `"callback_data":"/mute bonds"`)
+	fake.waitForCall("status shows on and offers a reset of the changed interval", func(c apiCall) bool {
+		return textContains("editMessageText", "Notifications: on")(c) && strings.Contains(c.Fields["reply_markup"], `"callback_data":"/mute bonds"`) &&
+			strings.Contains(c.Fields["reply_markup"], `"callback_data":"/reset bonds"`)
 	})
+
+	// Resetting brings back the configured interval and re-renders the status page
+	fake.queueButtonClick(allowedChatID, 42, "/reset bonds")
+	fake.waitForCall("status after reset", func(c apiCall) bool {
+		return textContains("editMessageText", "Current run interval: 1h 0m 0s\n")(c) && !strings.Contains(c.Fields["reply_markup"], "/reset bonds")
+	})
+
+	data, _ = os.ReadFile(stateFile)
+	if strings.Contains(string(data), `"interval"`) {
+		t.Errorf("state file still contains the reset interval: %s", data)
+	}
 
 	// "Return" goes back to the previous menu
 	fake.queueButtonClick(allowedChatID, 42, "/status")

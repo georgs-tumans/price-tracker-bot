@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,10 +19,17 @@ type fakeBehavior struct {
 	err          error
 	doPanic      bool
 	notification string
+
+	mu           sync.Mutex
+	lastCriteria []config.NotifyCriteria
 }
 
-func (f *fakeBehavior) Execute(_ *config.Tracker) (string, string, error) {
+func (f *fakeBehavior) Execute(trackerData *config.Tracker) (string, string, error) {
 	f.calls.Add(1)
+
+	f.mu.Lock()
+	f.lastCriteria = trackerData.NotifyCriteria
+	f.mu.Unlock()
 
 	if f.doPanic {
 		panic("boom")
@@ -36,8 +44,9 @@ type sentMessage struct {
 }
 
 type recordingMessenger struct {
-	mu   sync.Mutex
-	sent []sentMessage
+	mu               sync.Mutex
+	sent             []sentMessage
+	removedKeyboards int
 }
 
 func (m *recordingMessenger) record(text string, menu *models.InlineKeyboardMarkup) {
@@ -54,18 +63,44 @@ func (m *recordingMessenger) SendHTMLWithMenu(_ int64, text string, menu *models
 func (m *recordingMessenger) SendHTMLWithKeyboard(_ int64, text string, _ *models.ReplyKeyboardMarkup) {
 	m.record(text, nil)
 }
-func (m *recordingMessenger) EditHTMLWithMenu(_ int64, _ int, _ string, _ *models.InlineKeyboardMarkup) {
+func (m *recordingMessenger) EditHTMLWithMenu(_ int64, _ int, text string, menu *models.InlineKeyboardMarkup) {
+	m.record(text, menu)
 }
 func (m *recordingMessenger) EditMenu(_ int64, _ int, _ *models.InlineKeyboardMarkup) {}
-func (m *recordingMessenger) RemoveKeyboard(_ int64)                                  {}
+func (m *recordingMessenger) RemoveKeyboard(_ int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.removedKeyboards++
+}
+
+func (m *recordingMessenger) removedKeyboardCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return m.removedKeyboards
+}
+
+// Returns the last sent or edited message.
+func (m *recordingMessenger) last() sentMessage {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if len(m.sent) == 0 {
+		return sentMessage{}
+	}
+
+	return m.sent[len(m.sent)-1]
+}
 
 // A high error limit keeps the tests from trying to send a Telegram notification.
 func newTestTracker(behavior TrackerBehavior, interval time.Duration) *Tracker {
 	return &Tracker{
-		Code:       "test",
-		Behavior:   behavior,
-		errorLimit: 1000,
-		status:     TrackerStatus{CurrentInterval: interval},
+		Code:        "test",
+		Behavior:    behavior,
+		trackerData: &config.Tracker{Code: "test"},
+		errorLimit:  1000,
+		status:      TrackerStatus{CurrentInterval: interval},
 	}
 }
 
@@ -258,7 +293,7 @@ func TestCreateTrackerRaisesIntervalToMinimum(t *testing.T) {
 
 	// Once from the configured default, once from a restored state interval
 	for _, interval := range []time.Duration{0, time.Minute} {
-		tracker, err := CreateTracker(&recordingMessenger{}, "bonds", interval, cfg, 1)
+		tracker, err := CreateTracker(&recordingMessenger{}, "bonds", TrackerSettings{Interval: interval}, cfg, 1)
 		if err != nil {
 			t.Fatalf("CreateTracker: %v", err)
 		}
@@ -282,5 +317,30 @@ func TestSetIntervalRejectsValuesBelowMinimum(t *testing.T) {
 	defer messenger.mu.Unlock()
 	if len(messenger.sent) != 1 || !strings.Contains(messenger.sent[0].text, "at least 10m") {
 		t.Errorf("unexpected messages: %+v", messenger.sent)
+	}
+}
+
+// The criteria can be changed while the tracker runs; each run must use a consistent copy (caught by -race if not).
+func TestTrackerUsesItsOwnNotifyCriteria(t *testing.T) {
+	behavior := &fakeBehavior{}
+	tracker := newTestTracker(behavior, time.Millisecond)
+	tracker.Start()
+	defer tracker.Stop()
+
+	for i := range 50 {
+		tracker.SetNotifyCriteria([]config.NotifyCriteria{{Operator: "<", Value: strconv.Itoa(i)}})
+	}
+
+	waitFor(t, func() bool {
+		behavior.mu.Lock()
+		defer behavior.mu.Unlock()
+
+		return len(behavior.lastCriteria) == 1 && behavior.lastCriteria[0].Value == "49"
+	})
+
+	criteria := tracker.Status().NotifyCriteria
+	criteria[0].Value = "changed by the caller"
+	if got := tracker.Status().NotifyCriteria[0].Value; got != "49" {
+		t.Errorf("Status() returned the tracker's own criteria instead of a copy: %q", got)
 	}
 }

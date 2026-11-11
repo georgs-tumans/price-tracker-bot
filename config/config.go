@@ -198,6 +198,19 @@ func (c *Configuration) ValidateConfig() {
 	}
 }
 
+// Validates criteria that don't come from the tracker files (e.g. the saved state)
+// against the same rules as the tracker files.
+func ValidateNotifyCriteria(criteria []NotifyCriteria) error {
+	validate := validator.New()
+	for i := range criteria {
+		if err := validate.Struct(&criteria[i]); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (c *Configuration) GetAPITrackerData(code string) *Tracker {
 	for _, tracker := range c.APITrackers {
 		if tracker.Code == code {

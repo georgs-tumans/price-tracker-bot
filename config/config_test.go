@@ -115,3 +115,25 @@ func TestLoadConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateNotifyCriteria(t *testing.T) {
+	tests := []struct {
+		name     string
+		criteria []NotifyCriteria
+		wantErr  bool
+	}{
+		{name: "none", criteria: nil},
+		{name: "valid", criteria: []NotifyCriteria{{Operator: ">=", Value: "100"}, {Operator: "<", Value: "-2.5"}}},
+		{name: "unknown operator", criteria: []NotifyCriteria{{Operator: "!=", Value: "1"}}, wantErr: true},
+		{name: "not a number", criteria: []NotifyCriteria{{Operator: "<", Value: "cheap"}}, wantErr: true},
+		{name: "missing value", criteria: []NotifyCriteria{{Operator: "<"}}, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := ValidateNotifyCriteria(tt.criteria); (err != nil) != tt.wantErr {
+				t.Errorf("ValidateNotifyCriteria() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
