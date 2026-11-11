@@ -7,7 +7,7 @@ Both files have the same structure:
 ```
 [
    {
-     "code": "<string> an arbitrary value that identifies the tracker; must be unique; cannot contain '_', '/' or ' ' (space)",
+     "code": "<string> an arbitrary value that identifies the tracker; must be unique; at most 40 characters; cannot contain '_', '/' or ' ' (space)",
      "dataUrl": "<string> the URL the value is read from: an API endpoint for API trackers, a web page for scraper trackers",
      "viewUrl": "<string, optional> the website URL linked in the notification message",
      "interval": "<string> default run interval, e.g. '1h'; available interval types: 'm' - minutes, 'h' - hours, 'd' - days; values below MIN_INTERVAL are raised to it",

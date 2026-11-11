@@ -21,8 +21,12 @@ type NotifyCriteria struct {
 	Value    string `json:"value" validate:"required,numeric"`
 }
 
+// MaxTrackerCodeLength keeps the bot's buttons, which contain the tracker code, within Telegram's 64-byte limit
+// for button data. Keep it in sync with the "max" rule of Tracker.Code.
+const MaxTrackerCodeLength = 40
+
 type Tracker struct {
-	Code               string           `json:"code" validate:"required,excludesall=_/ "`
+	Code               string           `json:"code" validate:"required,max=40,excludesall=_/ "`
 	DataURL            string           `json:"dataUrl" validate:"required,url"`
 	ViewURL            string           `json:"viewUrl" validate:"omitempty,url"`
 	Interval           string           `json:"interval" validate:"required"`

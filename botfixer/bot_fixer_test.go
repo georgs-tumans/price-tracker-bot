@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -340,6 +341,29 @@ func TestBotEndToEnd(t *testing.T) {
 	data, _ = os.ReadFile(stateFile)
 	if strings.Contains(string(data), `"interval"`) {
 		t.Errorf("state file still contains the reset interval: %s", data)
+	}
+
+	// Editing a criterion: the criteria page, its edit button, a prompt with suggestions, then the typed value
+	fake.queueButtonClick(allowedChatID, 42, "/criteria bonds")
+	page := fake.waitForCall("criteria page", textContains("editMessageText", "Notify criteria for bonds"))
+	editButton := regexp.MustCompile(`/criteria bonds edit 1 v[0-9a-f]{4}`).FindString(page.Fields["reply_markup"])
+	if editButton == "" {
+		t.Fatalf("criteria page is missing the edit button: %s", page.Fields["reply_markup"])
+	}
+
+	fake.queueButtonClick(allowedChatID, 42, editButton)
+	criterionPrompt := fake.waitForCall("criterion prompt", textContains("sendMessage", "Send me the new criterion #1"))
+	// The bot library's JSON encoder escapes "<" as \u003c
+	if !strings.Contains(criterionPrompt.Fields["reply_markup"], `"text":"\u003c 5"`) {
+		t.Errorf("criterion prompt is missing the suggestions: %s", criterionPrompt.Fields["reply_markup"])
+	}
+
+	fake.queueMessage(allowedChatID, "8")
+	fake.waitForCall("criterion changed", textContains("sendMessage", "Criterion #1 is now: tracked value &lt; 8"))
+
+	data, _ = os.ReadFile(stateFile)
+	if !strings.Contains(string(data), `"value": "8"`) {
+		t.Errorf("state file does not contain the changed criterion: %s", data)
 	}
 
 	// "Return" goes back to the previous menu

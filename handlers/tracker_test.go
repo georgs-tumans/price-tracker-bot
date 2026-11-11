@@ -47,6 +47,7 @@ type recordingMessenger struct {
 	mu               sync.Mutex
 	sent             []sentMessage
 	removedKeyboards int
+	lastKeyboard     *models.ReplyKeyboardMarkup
 }
 
 func (m *recordingMessenger) record(text string, menu *models.InlineKeyboardMarkup) {
@@ -60,8 +61,13 @@ func (m *recordingMessenger) SendHTML(_ int64, text string) { m.record(text, nil
 func (m *recordingMessenger) SendHTMLWithMenu(_ int64, text string, menu *models.InlineKeyboardMarkup) {
 	m.record(text, menu)
 }
-func (m *recordingMessenger) SendHTMLWithKeyboard(_ int64, text string, _ *models.ReplyKeyboardMarkup) {
+func (m *recordingMessenger) SendHTMLWithKeyboard(_ int64, text string, keyboard *models.ReplyKeyboardMarkup) {
 	m.record(text, nil)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.lastKeyboard = keyboard
 }
 func (m *recordingMessenger) EditHTMLWithMenu(_ int64, _ int, text string, menu *models.InlineKeyboardMarkup) {
 	m.record(text, menu)
@@ -79,6 +85,42 @@ func (m *recordingMessenger) removedKeyboardCount() int {
 	defer m.mu.Unlock()
 
 	return m.removedKeyboards
+}
+
+func (m *recordingMessenger) sentMessages() []sentMessage {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return append([]sentMessage(nil), m.sent...)
+}
+
+func (m *recordingMessenger) hasMessage(substring string) bool {
+	for _, message := range m.sentMessages() {
+		if strings.Contains(message.text, substring) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// Returns the texts of the buttons of the last reply keyboard that was sent.
+func (m *recordingMessenger) lastKeyboardOptions() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.lastKeyboard == nil {
+		return nil
+	}
+
+	var options []string
+	for _, row := range m.lastKeyboard.Keyboard {
+		for _, button := range row {
+			options = append(options, button.Text)
+		}
+	}
+
+	return options
 }
 
 // Returns the last sent or edited message.

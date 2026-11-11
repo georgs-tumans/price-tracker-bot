@@ -33,6 +33,7 @@ type Command struct {
 	Hidden             bool // Whether the command shows up in the help menu
 	SkipNavigation     bool // Whether the command stays out of the "Return" navigation history
 	IsAction           bool // Changes something, so "Return" skips it instead of running it again
+	ParamIsAction      bool // With a parameter the command changes something, so that call stays out of the "Return" history
 	Params             []string
 	Handler            CommandFunc
 }
@@ -62,7 +63,8 @@ func NewCommandHandler(messenger helpers.Messenger, config *config.Configuration
 		"start":    {Type: generalType, DescriptionGeneral: "Bot start command", Handler: ch.handleHelp, Hidden: true, Params: []string{trackerCodeParam}},
 		"run":      {Type: bothType, DescriptionTracker: "Run a tracker", DescriptionGeneral: "Run all available trackers", Handler: ch.handleStart, Hidden: false, IsAction: true, Params: []string{trackerCodeParam}},
 		"stop":     {Type: bothType, DescriptionTracker: "Stop a tracker", DescriptionGeneral: "Stop all running trackers", Handler: ch.handleStop, Hidden: false, IsAction: true, Params: []string{trackerCodeParam}},
-		"interval": {Type: trackerType, DescriptionTracker: "Change the tracker run interval", Handler: ch.handleSetInterval, Hidden: false, Params: []string{trackerCodeParam, "interval*"}},
+		"interval": {Type: trackerType, DescriptionTracker: "Change the tracker run interval", Handler: ch.handleSetInterval, Hidden: false, ParamIsAction: true, Params: []string{trackerCodeParam, "interval*"}},
+		"criteria": {Type: trackerType, DescriptionTracker: "View or change the notify criteria", Handler: ch.handleCriteria, ParamIsAction: true, Params: []string{trackerCodeParam, "action**"}},
 		"status":   {Type: bothType, DescriptionTracker: "View a particular tracker status", DescriptionGeneral: "View status of all available trackers", Handler: ch.handleStatus, Hidden: false, Params: []string{trackerCodeParam}},
 		"mute":     {Type: trackerType, DescriptionTracker: "Pause tracker notifications", Handler: ch.handleMute, SkipNavigation: true, Params: []string{trackerCodeParam}},
 		"unmute":   {Type: trackerType, DescriptionTracker: "Resume tracker notifications", Handler: ch.handleUnmute, SkipNavigation: true, Params: []string{trackerCodeParam}},
@@ -102,7 +104,7 @@ func (ch *CommandHandler) HandleCommand(chatID int64, commandString string, call
 	log.Printf("[CommandHandler] Handling command: %s", commandString)
 
 	if c, exists := ch.commandMap[command]; exists {
-		if !isReturn && !c.SkipNavigation {
+		if !isReturn && !c.SkipNavigation && (!c.ParamIsAction || commandParam == nil) {
 			ch.GetUserNavigationState(chatID).Push(
 				&Command{
 					Command: command,
@@ -153,31 +155,21 @@ func (ch *CommandHandler) HandleReturn(chatID int64, callbackMessageID *int) err
 }
 
 func (ch *CommandHandler) HandleUserInput(chatID int64, userInput string, callbackMessageID *int) error {
+	pendingCommand := ch.GetUserNavigationState(chatID).PendingCommand
 	ch.cancelUserInput(chatID)
 
-	gotoCommand := ch.GetUserNavigationState(chatID).Peek()
-	if gotoCommand == nil {
+	if pendingCommand == "" {
 		return errors.New("no command is waiting for user input")
 	}
 
-	commandString := "/" + gotoCommand.Command
-	if len(gotoCommand.Params) > 0 {
-		commandString += " " + strings.Join(gotoCommand.Params, " ")
-	}
-
-	commandString = strings.TrimSpace(commandString) + " " + userInput
-
-	if err := ch.HandleCommand(chatID, commandString, callbackMessageID, true); err != nil {
-		return err
-	}
-
-	return nil
+	// Not a new step in the "Return" history: the input completes the command that asked for it
+	return ch.HandleCommand(chatID, pendingCommand+" "+userInput, callbackMessageID, true)
 }
 
 // Ends a prompt for input and hides its reply keyboard.
 func (ch *CommandHandler) cancelUserInput(chatID int64) {
 	navigationState := ch.GetUserNavigationState(chatID)
-	navigationState.AwaitingUserInput = false
+	navigationState.PendingCommand = ""
 
 	if navigationState.CustomKeyboardActive {
 		ch.messenger.RemoveKeyboard(chatID)
@@ -310,7 +302,7 @@ func (ch *CommandHandler) handleSetInterval(code string, chatID int64, commandPa
 			chatID, "Send me the new interval value!\n\nThe format: <i>[number][interval type*]</i>\n\nAvailable interval types: \n'm'(minute), 'h'(hour), 'd'(day)\n\nMinimum interval: "+utilities.DurationToString(ch.config.MinInterval),
 			helpers.GetIntervalCustomMenu(),
 		)
-		navigationState.AwaitingUserInput = true
+		navigationState.PendingCommand = "/interval " + code
 
 		return nil
 	}
@@ -368,7 +360,7 @@ func (ch *CommandHandler) handleSetInterval(code string, chatID int64, commandPa
 }
 
 // Sets the run interval and the notify criteria back to the tracker config, for a running or a stopped tracker.
-func (ch *CommandHandler) handleReset(code string, chatID int64, _ *string) error {
+func (ch *CommandHandler) handleReset(code string, chatID int64, commandParam *string) error {
 	trackerData := ch.config.GetTrackerData(code)
 	if trackerData == nil {
 		log.Printf("[CommandHandler] Tracker '%s' not found for reset", code)
@@ -392,6 +384,12 @@ func (ch *CommandHandler) handleReset(code string, chatID int64, _ *string) erro
 
 	ch.saveState()
 	log.Printf("[CommandHandler] Reset tracker '%s' to its configured settings", code)
+
+	if utilities.GetStringPointerValue(commandParam) == resetFromCriteriaParam {
+		ch.showCriteriaPage(code, chatID, "The run interval and notify criteria were reset to the config.")
+
+		return nil
+	}
 
 	return ch.handleStatus(code, chatID, nil)
 }
@@ -536,6 +534,7 @@ func (ch *CommandHandler) handleStatus(code string, chatID int64, _ *string) err
 
 	statusMenu.InlineKeyboard = append(statusMenu.InlineKeyboard, []models.InlineKeyboardButton{helpers.InlineButton("Stop tracker", "/stop "+code)})
 	statusMenu.InlineKeyboard = append(statusMenu.InlineKeyboard, []models.InlineKeyboardButton{helpers.InlineButton("Change run interval", "/interval "+code)})
+	statusMenu.InlineKeyboard = append(statusMenu.InlineKeyboard, []models.InlineKeyboardButton{helpers.InlineButton("Notify criteria", "/criteria "+code)})
 	statusMenu.InlineKeyboard = append(statusMenu.InlineKeyboard, []models.InlineKeyboardButton{notificationsButton})
 	if !settings.isEmpty() {
 		statusMenu.InlineKeyboard = append(statusMenu.InlineKeyboard, resetButtonRow)
@@ -592,6 +591,8 @@ func (ch *CommandHandler) handleHelp(code string, chatID int64, _ *string) error
 	builder.WriteString("\n<b>*</b>Interval parameter format: \n<i>[number][interval type]</i> (e.g. 5m, 1h, 2d)\n")
 	builder.WriteString("\nAvailable interval types: \n'm'(minute), 'h'(hour), 'd'(day)\n")
 	fmt.Fprintf(&builder, "\nMinimum interval: %s\n", utilities.DurationToString(ch.config.MinInterval))
+	builder.WriteString("\n<b>**</b>Criteria actions: <i>add [criterion]</i>, <i>edit [number] [criterion]</i>, <i>del [number]</i>; without an action the criteria are listed\n")
+	builder.WriteString("\nA criterion is an operator and a number, e.g. <i>&lt;= 45.5</i>; operators: &lt; &lt;= = &gt;= &gt;. When editing, a number alone keeps the operator.\n")
 
 	ch.messenger.SendHTML(chatID, builder.String())
 

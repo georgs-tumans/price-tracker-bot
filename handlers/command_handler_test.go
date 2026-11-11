@@ -119,7 +119,7 @@ func TestCommandCancelsPendingInput(t *testing.T) {
 	}
 
 	state := ch.GetUserNavigationState(testChatID)
-	if !state.AwaitingUserInput || !state.CustomKeyboardActive {
+	if !state.AwaitingUserInput() || !state.CustomKeyboardActive {
 		t.Fatalf("the interval button did not ask for input: %+v", state)
 	}
 
@@ -127,7 +127,7 @@ func TestCommandCancelsPendingInput(t *testing.T) {
 		t.Fatalf("HandleCommand: %v", err)
 	}
 
-	if state.AwaitingUserInput || state.CustomKeyboardActive {
+	if state.AwaitingUserInput() || state.CustomKeyboardActive {
 		t.Errorf("another command left the prompt waiting for input: %+v", state)
 	}
 

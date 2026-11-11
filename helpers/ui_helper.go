@@ -20,10 +20,23 @@ func GetReturnButtonMenu(existingMenu *models.InlineKeyboardMarkup) *models.Inli
 }
 
 func GetIntervalCustomMenu() *models.ReplyKeyboardMarkup {
+	return GetReplyKeyboard([]string{"10m", "1h", "1d"})
+}
+
+// GetReplyKeyboard returns a one-row keyboard of suggested answers that replaces the phone keyboard until one is
+// tapped; nil when there are no suggestions.
+func GetReplyKeyboard(options []string) *models.ReplyKeyboardMarkup {
+	if len(options) == 0 {
+		return nil
+	}
+
+	row := make([]models.KeyboardButton, 0, len(options))
+	for _, option := range options {
+		row = append(row, models.KeyboardButton{Text: option})
+	}
+
 	return &models.ReplyKeyboardMarkup{
-		Keyboard: [][]models.KeyboardButton{
-			{{Text: "10m"}, {Text: "1h"}, {Text: "1d"}},
-		},
+		Keyboard:        [][]models.KeyboardButton{row},
 		OneTimeKeyboard: true,
 		ResizeKeyboard:  true,
 	}
